@@ -1,0 +1,22 @@
+name: ros-jazzy
+channels:
+  - conda-forge
+  - https://repo.prefix.dev/robostack-jazzy
+dependencies:
+  - python=3.12                      # Python runtime (Conda will pin to 3.12)
+  - ros-jazzy-ros-base               # Core ROS 2 Jazzy (nodes, rclcpp, launch system, CLI tools)
+  - ros-jazzy-rviz2                  # Visualization GUI (RViz2) for scans, maps, debugging
+  - ros-jazzy-ros-gz-sim             # ROS ↔ Gazebo Harmonic bridge (simulation integration)
+  - ros-jazzy-ros-gz-interfaces      # Message definitions for ros_gz bridge
+  - ros-jazzy-slam-toolbox           # 2D SLAM backend (Cartographer-like, easier to use)
+  - ros-jazzy-sensor-msgs            # Messages: LaserScan, PointCloud2, IMU, etc.
+  - ros-jazzy-geometry-msgs          # Messages: Pose, Transform, Twist, Vector3
+  - ros-jazzy-std-msgs               # Messages: Bool, Int32, String, etc.
+  - ros-jazzy-nav-msgs               # Messages for navigation stack (Odometry, Path)
+  - colcon-common-extensions         # Build system for ROS 2 workspaces (colcon extensions)
+  - cmake                            # Build tool (needed for compiling C++ nodes)
+  - pkg-config                       # Build helper for finding libraries
+  - ninja                            # Fast build backend (preferred with CMake)
+  - numpy                            # Python scientific computing, matrices, arrays
+  - eigen                            # C++ linear algebra (used by many ROS/SLAM libs)
+  - pcl                              # Point Cloud Library (for depth/point cloud processing)
