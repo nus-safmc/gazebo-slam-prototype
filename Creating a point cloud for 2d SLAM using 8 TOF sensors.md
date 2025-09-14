@@ -30,7 +30,7 @@ Later, when you transition to **PX4 SITL + hardware testing**, you’ll likely m
 [Robostack](https://robostack.github.io/GettingStarted.html)
 
 Note a problem with the default install (fastdds) refer to [link](https://github.com/RoboStack/ros-jazzy/issues/57)
-(This can be set to default by using a script with the conda env)
+(This is automatically configured for both conda and pixi environments below)
 ```python 
 	# 1) Ensure hook folders exist
 	mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
@@ -66,10 +66,10 @@ Note a problem with the default install (fastdds) refer to [link](https://github
 
 ##### Option 2: Pixi (modern package manager)
 # Save and exit pixi.toml
-pixi install
+pixi install -e jazzy
 # You can now start an environment with your desired robostack distribution using one of the below commands (either executed from within the project directory or by appending `--manifest-path` and pointing to your project directory):
 
-# ROS jazzy
+# ROS jazzy (includes CycloneDDS configuration)
 pixi shell -e jazzy
 
 
