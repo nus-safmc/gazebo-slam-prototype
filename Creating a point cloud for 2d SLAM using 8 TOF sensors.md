@@ -28,6 +28,7 @@ Later, when you transition to **PX4 SITL + hardware testing**, you’ll likely m
 *** 
 #### Links:
 [Robostack](https://robostack.github.io/GettingStarted.html)
+
 Note a problem with the default install (fastdds) refer to [link](https://github.com/RoboStack/ros-jazzy/issues/57)
 (This can be set to default by using a script with the conda env)
 ```python 
@@ -56,9 +57,23 @@ Note a problem with the default install (fastdds) refer to [link](https://github
 
 [Gazebo Harmonic](https://gazebosim.org/docs/harmonic/install_osx/)
 
-*** 
+***
+#### Environment Management: 2 Ways (Conda or Pixi)
 
+##### Option 1: Conda (traditional)
 # Update the active env from environment.yml
 `conda env update -f environment.yml --prune`
+
+##### Option 2: Pixi (modern package manager)
+# Save and exit pixi.toml
+pixi install
+# You can now start an environment with your desired robostack distribution using one of the below commands (either executed from within the project directory or by appending `--manifest-path` and pointing to your project directory):
+
+# ROS jazzy
+pixi shell -e jazzy
+
+
+cd robostack
+pixi shell -e jazzy
 
 *** 
