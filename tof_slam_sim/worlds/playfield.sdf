@@ -193,7 +193,7 @@
 
     <!-- Initial robot spawn point -->
     <include>
-      <uri>model://tof_slam_quadcopter</uri>
+      <uri>model://quadcopter</uri>
       <name>robot</name>
       <pose>0 -8 0.05 0 0 0</pose>
     </include>
