@@ -4,13 +4,14 @@ description = "Development environment for RoboStack ROS packages"
 channels = ["https://prefix.dev/conda-forge"]
 platforms = ["linux-64", "win-64", "osx-64", "osx-arm64", "linux-aarch64"]
 
-# This will automatically activate the ros workspace on activation
-[target.win.activation]
-scripts = ["install/setup.bat"]
+# ROS environment is automatically activated by RoboStack via conda activation scripts
+# Additional environment configuration for ROS DDS settings
 
 [target.unix.activation]
-# For activation scripts, we use bash for Unix-like systems
-scripts = ["install/setup.bash"]
+scripts = ["scripts/activate-cyclonedds.sh"]
+
+[target.win.activation]
+scripts = ["scripts/activate-cyclonedds.bat"]
 
 # To build you can use - `pixi run -e <ros distro> build <Any other temporary args>`
 [feature.build.target.win-64.tasks]
@@ -18,6 +19,13 @@ build = "colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMAN
 
 [feature.build.target.unix.tasks]
 build = "colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
+
+[tasks]
+build = { cmd = "colcon build --symlink-install --install-base .pixi/envs/jazzy --merge-install" }
+clean = { cmd = "rm -rf build/ log/ .pixi/envs/jazzy/share/tof_slam_sim .pixi/envs/jazzy/lib/tof_slam_sim" }
+rebuild = { cmd = "pixi run clean && pixi run build" }
+sim = { cmd = "ros2 launch tof_slam_sim sim_with_bridge.launch.py" }
+slam = { cmd = "ros2 launch tof_slam_sim slam_test.launch.py" }
 
 # Dependencies used by all environments
 [dependencies]
@@ -82,9 +90,7 @@ pkg-config = ">=0.29.2,<0.30"
 ninja = ">=1.13.1,<2"
 numpy = ">=1.26.4,<2"
 eigen = ">=3.4.0,<4"
-pcl = ">=1.15.0,<2"
-
-### ROS Kilted ####
+pcl = ">=1.15.0,<2"### ROS Kilted ####
 # [feature.kilted]
 # channels = ["https://prefix.dev/robostack-kilted"]
 
