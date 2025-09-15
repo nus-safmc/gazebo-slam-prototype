@@ -30,30 +30,8 @@ Later, when you transition to **PX4 SITL + hardware testing**, you’ll likely m
 [Robostack](https://robostack.github.io/GettingStarted.html)
 
 Note a problem with the default install (fastdds) refer to [link](https://github.com/RoboStack/ros-jazzy/issues/57)
-(This is automatically configured for both conda and pixi environments below)
-```python 
-	# 1) Ensure hook folders exist
-	mkdir -p "$CONDA_PREFIX/etc/conda/activate.d" "$CONDA_PREFIX/etc/conda/deactivate.d"
+(This is automatically configured when u initialize pixi env in /scripts)
 
-	# 2) Activation hook: force CycloneDDS, keep previous value
-	cat > "$CONDA_PREFIX/etc/conda/activate.d/rmw_cyclonedds.sh" <<'EOF'
-	# Save any existing value so we can restore it on deactivate
-	export _CONDA_BACKUP_RMW_IMPLEMENTATION="${RMW_IMPLEMENTATION-}"
-	export RMW_IMPLEMENTATION="rmw_cyclonedds_cpp"
-	EOF
-
-	# 3) Deactivation hook: restore previous value (or unset)
-	cat > "$CONDA_PREFIX/etc/conda/deactivate.d/rmw_cyclonedds.sh" <<'EOF'
-	if [ -n "${_CONDA_BACKUP_RMW_IMPLEMENTATION+x}" ]; then
-	if [ -z "$_CONDA_BACKUP_RMW_IMPLEMENTATION" ]; then
-		unset RMW_IMPLEMENTATION
-	else
-		export RMW_IMPLEMENTATION="$_CONDA_BACKUP_RMW_IMPLEMENTATION"
-	fi
-	unset _CONDA_BACKUP_RMW_IMPLEMENTATION
-	fi
-	EOF
-```
 
 [Gazebo Harmonic](https://gazebosim.org/docs/harmonic/install_osx/)
 
