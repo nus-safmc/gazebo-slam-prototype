@@ -5,16 +5,35 @@ from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 import os
+import platform
 
 def generate_launch_description():
     pkg_tof_slam_sim = FindPackageShare('tof_slam_sim')
-    
-    # Launch Gazebo with our world
-    gz_sim = ExecuteProcess(
-        cmd=['gz', 'sim', '-r',
-             PathJoinSubstitution([pkg_tof_slam_sim, 'worlds', 'playfield.sdf'])],
-        output='screen'
-    )
+
+    # Check if we're on macOS
+    is_macos = platform.system() == 'Darwin'
+
+    if is_macos:
+        # On macOS, launch server and GUI separately
+        gz_sim_server = ExecuteProcess(
+            cmd=['gz', 'sim', '-s', '-r',
+                 PathJoinSubstitution([pkg_tof_slam_sim, 'worlds', 'playfield.sdf'])],
+            output='screen'
+        )
+
+        gz_sim_gui = ExecuteProcess(
+            cmd=['gz', 'sim', '-g'],
+            output='screen'
+        )
+
+        gz_sim = [gz_sim_server, gz_sim_gui]
+    else:
+        # On other platforms, use the combined -r flag
+        gz_sim = ExecuteProcess(
+            cmd=['gz', 'sim', '-r',
+                 PathJoinSubstitution([pkg_tof_slam_sim, 'worlds', 'playfield.sdf'])],
+            output='screen'
+        )
     
     # Bridge configurations for each ToF sensor
     bridge_configs = []
@@ -84,9 +103,14 @@ def generate_launch_description():
     
     # Create launch description
     ld = LaunchDescription()
-    
+
     # Add Gazebo
-    ld.add_action(gz_sim)
+    if is_macos:
+        # Add both server and GUI processes
+        ld.add_action(gz_sim[0])  # server
+        ld.add_action(gz_sim[1])  # gui
+    else:
+        ld.add_action(gz_sim)
     
     # Add all bridge nodes
     for config in bridge_configs:
