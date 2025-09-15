@@ -238,6 +238,24 @@ pixi run -e jazzy ros2 --version
 pixi run -e jazzy env | grep RMW_IMPLEMENTATION
 ```
 
+### Package Built But Not Found by ROS
+
+If `ros2 pkg list` doesn't show your package after building:
+
+```bash
+# Check if package was installed to pixi environment
+find .pixi/envs/jazzy -name "*your_package*" -type d
+
+# If not found, clean and rebuild
+pixi run -e jazzy clean
+pixi run -e jazzy build
+
+# Verify the build command includes --install-base
+pixi run -e jazzy build --help  # Should show the full command
+```
+
+**Common cause**: Missing `--install-base .pixi/envs/jazzy` in the build command.
+
 ## Advanced: Understanding the Pixi Configuration
 
 ### Your `pixi.toml` File
@@ -250,6 +268,10 @@ jazzy = { features = ["jazzy", "build"] }
 ros-jazzy-desktop = "*"  # Full ROS 2 installation
 # ... other dependencies
 
+# Feature-specific build tasks (ensure --install-base is included!)
+[feature.build.target.unix.tasks]
+build = "colcon build --symlink-install --install-base .pixi/envs/jazzy --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
+
 [tasks]
 build = { cmd = "colcon build --symlink-install --install-base .pixi/envs/jazzy --merge-install" }
 ```
@@ -257,7 +279,8 @@ build = { cmd = "colcon build --symlink-install --install-base .pixi/envs/jazzy 
 This configuration:
 - Defines a `jazzy` environment with ROS 2
 - Specifies all required dependencies
-- Provides build commands that install directly into the pixi environment
+- **Important**: Uses `--install-base .pixi/envs/jazzy` to install packages into the pixi environment
+- Feature-specific tasks override global tasks when using `pixi run -e jazzy build`
 
 ### Environment Activation
 
@@ -293,5 +316,6 @@ pixi run -e jazzy clean
 3. **Automatic dependency management** - Pixi handles ROS versions
 4. **Cross-platform** - Same workflow on macOS, Linux, Windows
 5. **CycloneDDS configured automatically** - No manual DDS setup
+6. **Local environments preferred** - Isolated, reproducible, shareable
 
 Your build system is designed to be simple: edit code → build → test. The complexity of ROS package management is handled automatically by RoboStack and Pixi.
