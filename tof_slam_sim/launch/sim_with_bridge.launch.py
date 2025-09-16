@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, ExecuteProcess
+from launch.actions import IncludeLaunchDescription, ExecuteProcess, SetEnvironmentVariable
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.actions import Node
@@ -9,6 +9,16 @@ import platform
 
 def generate_launch_description():
     pkg_tof_slam_sim = FindPackageShare('tof_slam_sim')
+
+    # Set Gazebo resource path to include our models and worlds
+    set_gz_resource_path = SetEnvironmentVariable(
+        name='GZ_SIM_RESOURCE_PATH',
+        value=[
+            PathJoinSubstitution([pkg_tof_slam_sim, 'models']),
+            ':',
+            PathJoinSubstitution([pkg_tof_slam_sim, 'worlds'])
+        ]
+    )
 
     # Check if we're on macOS
     is_macos = platform.system() == 'Darwin'
@@ -103,6 +113,9 @@ def generate_launch_description():
     
     # Create launch description
     ld = LaunchDescription()
+
+    # Add environment variable setup
+    ld.add_action(set_gz_resource_path)
 
     # Add Gazebo
     if is_macos:
