@@ -51,6 +51,15 @@ def generate_launch_description():
             {'use_sim_time': use_sim_time}
         ]
     )
+
+    auto_pilot = Node(
+        package='tof_slam_sim',
+        executable='auto_pilot',
+        name='auto_pilot',
+        output='screen',
+        # Uncomment or tweak env if you want different motion without code changes
+        # env={'AP_LIN_X':'1.0','AP_LIN_Z':'0.7','AP_ANG_Z':'0.3','AP_RATE':'15'}
+    )
     
     # Launch RViz
     rviz = Node(
@@ -72,5 +81,6 @@ def generate_launch_description():
     ld.add_action(scan_merger)
     ld.add_action(slam_toolbox)
     ld.add_action(rviz)
+    ld.add_action(auto_pilot)
     
     return ld

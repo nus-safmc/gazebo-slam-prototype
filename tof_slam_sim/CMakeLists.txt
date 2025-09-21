@@ -25,6 +25,7 @@ install(PROGRAMS
   src/tof8x8_to_scan.py
   src/scan_merger.py
   src/test_controller.py
+  scripts/auto_pilot.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

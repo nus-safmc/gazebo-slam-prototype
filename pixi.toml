@@ -95,7 +95,9 @@ build   = "colcon build --merge-install --install-base $CONDA_PREFIX --cmake-arg
 clean   = "rm -rf build log"
 rebuild = "pixi run -e jazzy clean && pixi run -e jazzy build"
 sim     = "ros2 launch tof_slam_sim sim_with_bridge.launch.py"
-slam    = "ros2 launch tof_slam_sim slam_test.launch.py"
+slam    = "ros2 launch tof_slam_sim auto_pilot"
+bridge  = "ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=/home/rex/gazebo-slam-prototype/tof_slam_sim/config/bridge.yaml"
+launch_robot1 = "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot1/cmd_vel"
 
 # Unix/macOS: faster iteration with symlinks
 [feature.jazzy.target.unix.tasks]
