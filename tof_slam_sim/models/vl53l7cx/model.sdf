@@ -17,6 +17,7 @@
         </inertia>
       </inertial>
 
+      <gravity>false</gravity>
       <visual name="body">
         <geometry>
           <box>
