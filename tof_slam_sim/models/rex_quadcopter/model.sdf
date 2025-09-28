@@ -183,24 +183,20 @@
     <joint name="tof_left_joint" type="fixed"><parent>base_link</parent><child>tof_left::link</child></joint>
     <joint name="tof_front_left_joint" type="fixed"><parent>base_link</parent><child>tof_front_left::link</child></joint>
 
-	<!-- VelocityControl: subscribes to /model/<MODEL_NAME>/cmd_vel -->
-	<plugin name="gz::sim::systems::VelocityControl"
-		filename="gz-sim-velocity-control-system">
-	  <!-- Explicit but optional; default is "cmd_vel" -->
-	  <topic>cmd_vel</topic>
-	  <!-- (Optional) limits -->
-	  <!-- <max_linear_acceleration>5.0</max_linear_acceleration> -->
-	  <!-- <max_angular_acceleration>5.0</max_angular_acceleration> -->
-	</plugin>
+    <!-- VelocityControl: subscribes to /model/<MODEL_NAME>/cmd_vel -->
+    <plugin name="gz::sim::systems::VelocityControl"
+          filename="libgz-sim-velocity-control-system.so">
+      <topic>cmd_vel</topic>
+    </plugin>
 
-	<!-- OdometryPublisher: publishes /model/<MODEL_NAME>/odometry -->
-	<plugin name="gz::sim::systems::OdometryPublisher"
-		filename="gz-sim-odometry-publisher-system">
-	  <topic>odometry</topic>             <!-- ✅ use <topic>, not <odom_topic> -->
-	  <frame_id>odom</frame_id>
-	  <child_frame_id>base_link</child_frame_id>
-	  <publish_tf>true</publish_tf>
-	</plugin>
+    <!-- OdometryPublisher: publishes /model/<MODEL>/odometry -->
+    <plugin name="gz::sim::systems::OdometryPublisher"
+            filename="libgz-sim-odometry-publisher-system.so">
+      <topic>odometry</topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_link</child_frame_id>
+      <publish_tf>true</publish_tf>
+    </plugin>
 
   </model>
 </sdf>
