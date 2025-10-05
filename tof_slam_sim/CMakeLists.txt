@@ -29,6 +29,13 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Provide a ROS-executable-friendly wrapper without the .py suffix so launch files
+# can reference `executable="auto_pilot"`.
+install(PROGRAMS scripts/auto_pilot.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME auto_pilot
+)
+
 # Install launch files
 install(DIRECTORY
   launch
@@ -40,6 +47,7 @@ install(DIRECTORY
   models
   worlds
   config
+  scripts
   DESTINATION share/${PROJECT_NAME}/
 )
 

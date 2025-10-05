@@ -14,17 +14,20 @@ def generate_launch_description():
     pkg = FindPackageShare('tof_slam_sim')
 
     # ===== EDIT THESE TO MATCH YOUR SETUP =====
-    MODEL = 'tof_slam_quadcopter'   # exact <model name="..."> from your model.sdf
+    # Note: the instance name in the world overrides the internal SDF model name.
+    # In worlds/playfield.sdf the quadcopter is included as <name>robot</name>,
+    # so the effective Gazebo topics are /model/robot/*.
+    MODEL = 'robot'                 # instance name from your world include
     WORLD = 'playfield'             # world name used in /world/<WORLD>/... topics
     DEPTH_STREAM = 'image'          # 'image' (default). Set to 'depth'/'depth_image' if your topics end that way.
-    # If your log_monitor.py is elsewhere, change this path:
-    LOG_MONITOR_PATH = PathJoinSubstitution([pkg, '../scripts/log_monitor.py'])
+    LOG_MONITOR_PATH = PathJoinSubstitution([pkg, 'scripts', 'log_monitor.py'])
     # =========================================
 
     # Common sensor names and helpers (used by both bridge + logger topic list)
     sensors = ['front','front_right','right','back_right','back','back_left','left','front_left']
     def gz_depth(s):
-        return f'/world/{WORLD}/model/{MODEL}/link/tof_{s}/sensor/depth_camera/{DEPTH_STREAM}'
+        # Depth sensors are nested models: /world/<WORLD>/model/<MODEL>/model/tof_<s>/...
+        return f'/world/{WORLD}/model/{MODEL}/model/tof_{s}/link/sensor/depth_camera/{DEPTH_STREAM}'
 
     # Build the ROS topic names after remap for depth sensors
     depth_ros_topics = [f'/tof_{s}/depth' for s in sensors]
@@ -68,15 +71,10 @@ def generate_launch_description():
         executable='parameter_bridge',
         name='bridge_cmd_odom',
         arguments=[
-            f'/model/{MODEL}/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            f'/model/{MODEL}/odometry@nav_msgs/msg/Odometry@gz.msgs.Odometry',
+            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
+            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
             '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
             '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
-            '--ros-args',
-            # Your autopilot publishes /cmd_vel; remap it into Gazebo's namespaced topic:
-            '-r', f'/model/{MODEL}/cmd_vel:=/cmd_vel',
-            # Give odometry a nice ROS name:
-            '-r', f'/model/{MODEL}/odometry:=/odom',
         ],
         output='screen',
     )
@@ -97,18 +95,24 @@ def generate_launch_description():
         output='screen',
     )
 
-    # ---- Autopilot: use THIS env's Python & harden logging env ----
+    # ---- Autopilot: execute the bundled script so imports resolve consistently ----
+    autopilot_env = {
+        'AP_LIN_Z': os.environ.get('AP_LIN_Z', '0.6'),
+        'AP_LIN_X': os.environ.get('AP_LIN_X', '0.8'),
+        'AP_LIN_Y': os.environ.get('AP_LIN_Y', '0.0'),
+        'AP_ANG_Z': os.environ.get('AP_ANG_Z', '0.2'),
+        'AP_RATE':  os.environ.get('AP_RATE', '10.0'),
+        'RCL_LOGGING_DIR': '/tmp/ros_logs',
+        'ROS_LOG_DIR': '/tmp/ros_logs',
+        'RCUTILS_LOGGING_USE_STDOUT': '1'
+    }
     auto_pilot = ExecuteProcess(
         cmd=[
-            sys.executable, '-u',
-            PathJoinSubstitution([pkg, '../../lib/tof_slam_sim/auto_pilot.py']),
+            sys.executable,
+            '-u',
+            PathJoinSubstitution([pkg, 'scripts', 'auto_pilot.py']),
         ],
-        env={
-            'AP_LIN_Z': '0.0',              # keep Z = 0 (gravity off in SDF)
-            'RCL_LOGGING_DIR': '/tmp/ros_logs',
-            'ROS_LOG_DIR': '/tmp/ros_logs',
-            'RCUTILS_LOGGING_USE_STDOUT': '1'
-        },
+        env=autopilot_env,
         output='screen',
     )
 

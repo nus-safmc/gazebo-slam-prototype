@@ -183,16 +183,17 @@
     <joint name="tof_left_joint" type="fixed"><parent>base_link</parent><child>tof_left::link</child></joint>
     <joint name="tof_front_left_joint" type="fixed"><parent>base_link</parent><child>tof_front_left::link</child></joint>
 
-    <!-- VelocityControl: subscribes to /model/<MODEL_NAME>/cmd_vel -->
-    <plugin name="gz::sim::systems::VelocityControl"
-          filename="libgz-sim-velocity-control-system.so">
-      <topic>cmd_vel</topic>
+    <!-- VelocityControl: subscribes to a global /cmd_vel -->
+    <plugin name="gz::sim::systems::VelocityControl" filename="gz-sim-velocity-control-system">
+      <topic>/cmd_vel</topic>
+      <use_world_frame>true</use_world_frame>
+      <max_linear_velocity>5</max_linear_velocity>
+      <max_angular_velocity>3</max_angular_velocity>
     </plugin>
 
-    <!-- OdometryPublisher: publishes /model/<MODEL>/odometry -->
-    <plugin name="gz::sim::systems::OdometryPublisher"
-            filename="libgz-sim-odometry-publisher-system.so">
-      <topic>odometry</topic>
+    <!-- OdometryPublisher: publishes global /odom -->
+    <plugin name="gz::sim::systems::OdometryPublisher" filename="gz-sim-odometry-publisher-system">
+      <topic>/odom</topic>
       <frame_id>odom</frame_id>
       <child_frame_id>base_link</child_frame_id>
       <publish_tf>true</publish_tf>
@@ -200,4 +201,3 @@
 
   </model>
 </sdf>
-
