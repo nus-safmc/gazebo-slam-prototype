@@ -148,17 +148,20 @@ def generate_launch_description():
     # 2. Platform-Specific Gazebo Launch
     is_macos = platform.system() == 'Darwin'
     if is_macos:
-        gz_sim = [gz_sim_server, gz_sim_gui]  # Separate processes
+        # Launch server and GUI separately for macOS
+        gz_sim_server = ExecuteProcess(cmd=['gz', 'sim', '-s', '-r', world_file])
+        gz_sim_gui = ExecuteProcess(cmd=['gz', 'sim', '-g'])
     else:
-        gz_sim = gz_sim_combined               # Single process
+        # Combined launch for other platforms
+        gz_sim = ExecuteProcess(cmd=['gz', 'sim', '-r', world_file])
 
     # 3. ROS-Gazebo Bridges (16 total: 8 sensors × 2 topics each)
     bridge_configs = []
     sensor_names = ['front', 'front_right', 'right', 'back_right',
                    'back', 'back_left', 'left', 'front_left']
 
-    for i, name in enumerate(sensor_names):
-        # Depth image bridge
+    for name in sensor_names:
+        # Camera image bridge
         bridge_configs.append(Node(
             package='ros_gz_bridge',
             executable='parameter_bridge',
@@ -186,14 +189,39 @@ def generate_launch_description():
         ))
 
     # 4. Robot Control Bridges
-    cmd_vel_bridge = Node(package='ros_gz_bridge', ...)
-    odom_bridge = Node(package='ros_gz_bridge', ...)
+    cmd_vel_bridge = Node(package='ros_gz_bridge',
+                         executable='parameter_bridge',
+                         name='bridge_cmd_vel',
+                         parameters=[{
+                             'gz_topic': '/model/robot/cmd_vel',
+                             'ros_topic': '/cmd_vel',
+                             'gz_type': 'gz.msgs.Twist',
+                             'ros_type': 'geometry_msgs/msg/Twist',
+                             'lazy': True
+                         }])
 
-    # 5. Staggered Bridge Startup (TimerAction prevents DDS conflicts)
+    odom_bridge = Node(package='ros_gz_bridge',
+                      executable='parameter_bridge',
+                      name='bridge_odom',
+                      parameters=[{
+                          'gz_topic': '/model/robot/odometry',
+                          'ros_topic': '/odom',
+                          'gz_type': 'gz.msgs.Odometry',
+                          'ros_type': 'nav_msgs/msg/Odometry',
+                          'lazy': True
+                      }])
+
+    # 5. Launch Description with Platform-Specific Gazebo Launch
     ld = LaunchDescription()
     ld.add_action(set_gz_resource_path)
-    ld.add_action(gz_sim)
 
+    if is_macos:
+        ld.add_action(gz_sim_server)
+        ld.add_action(gz_sim_gui)
+    else:
+        ld.add_action(gz_sim)
+
+    # Staggered bridge startup with TimerAction
     for i, config in enumerate(bridge_configs):
         ld.add_action(TimerAction(period=i * 0.2, actions=[config]))
 
