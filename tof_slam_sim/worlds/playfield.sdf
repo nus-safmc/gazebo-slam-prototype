@@ -156,6 +156,42 @@
       <static>true</static>
     </include>
 
+    <!-- Start area obstacles to exercise ToF sensors -->
+    <include>
+      <uri>model://pillar</uri>
+      <name>start_pillar_left</name>
+      <pose>-0.9 -8.2 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <include>
+      <uri>model://pillar</uri>
+      <name>start_pillar_right</name>
+      <pose>0.9 -8.2 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <include>
+      <uri>model://inner_wall</uri>
+      <name>start_wall_front</name>
+      <pose>0 -6.8 0 0 0 0</pose>
+      <static>true</static>
+    </include>
+
+    <include>
+      <uri>model://inner_wall</uri>
+      <name>start_wall_left</name>
+      <pose>-1.4 -8.0 0 0 0 1.5708</pose>
+      <static>true</static>
+    </include>
+
+    <include>
+      <uri>model://inner_wall</uri>
+      <name>start_wall_right</name>
+      <pose>1.4 -8.0 0 0 0 1.5708</pose>
+      <static>true</static>
+    </include>
+
     <!-- Pillars (example layout - can be modified) -->
     <include>
       <uri>model://pillar</uri>

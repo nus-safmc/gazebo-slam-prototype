@@ -19,7 +19,7 @@ def generate_launch_description():
     # so the effective Gazebo topics are /model/robot/*.
     MODEL = 'robot'                 # instance name from your world include
     WORLD = 'playfield'             # world name used in /world/<WORLD>/... topics
-    DEPTH_STREAM = 'image'          # 'image' (default). Set to 'depth'/'depth_image' if your topics end that way.
+    DEPTH_STREAM = 'depth_image'    # Depth cameras publish floating ranges on the /depth_image stream.
     LOG_MONITOR_PATH = PathJoinSubstitution([pkg, 'scripts', 'log_monitor.py'])
     # =========================================
 
@@ -82,10 +82,9 @@ def generate_launch_description():
     # ---- Bridge: 8x ToF depth images ----
     depth_args = []
     for s in sensors:
-        depth_args.append(f'{gz_depth(s)}@sensor_msgs/msg/Image@gz.msgs.Image')
+        gz_topic = gz_depth(s)
+        depth_args.append(f'{gz_topic}@sensor_msgs/msg/Image@gz.msgs.Image')
     depth_args += ['--ros-args']
-    for s in sensors:
-        depth_args += ['-r', f'{gz_depth(s)}:=/tof_{s}/depth']
 
     bridge_all_depth = Node(
         package='ros_gz_bridge',
@@ -95,12 +94,24 @@ def generate_launch_description():
         output='screen',
     )
 
+    depth_alias = Node(
+        package='tof_slam_sim',
+        executable='depth_alias.py',
+        name='depth_alias',
+        output='screen',
+        parameters=[{'world': WORLD, 'model': MODEL, 'stream': DEPTH_STREAM}],
+    )
+
     # ---- Autopilot: execute the bundled script so imports resolve consistently ----
     autopilot_env = {
-        'AP_LIN_Z': os.environ.get('AP_LIN_Z', '0.6'),
-        'AP_LIN_X': os.environ.get('AP_LIN_X', '0.8'),
+        'AP_LIN_Z': os.environ.get('AP_LIN_Z', '0.1'),
+        'AP_LIN_Z_MAX': os.environ.get('AP_LIN_Z_MAX', '0.2'),
+        'AP_LIN_X': os.environ.get('AP_LIN_X', '0.3'),
         'AP_LIN_Y': os.environ.get('AP_LIN_Y', '0.0'),
-        'AP_ANG_Z': os.environ.get('AP_ANG_Z', '0.2'),
+        'AP_ANG_Z': os.environ.get('AP_ANG_Z', '0.3'),
+        'AP_ALT_TARGET': os.environ.get('AP_ALT_TARGET', '1.5'),
+        'AP_ALT_KP': os.environ.get('AP_ALT_KP', '0.8'),
+        'AP_ALT_DEADBAND': os.environ.get('AP_ALT_DEADBAND', '0.05'),
         'AP_RATE':  os.environ.get('AP_RATE', '10.0'),
         'RCL_LOGGING_DIR': '/tmp/ros_logs',
         'ROS_LOG_DIR': '/tmp/ros_logs',
@@ -168,6 +179,7 @@ def generate_launch_description():
         ld.add_action(a)
     ld.add_action(bridge_cmd_odom)
     ld.add_action(bridge_all_depth)
+    ld.add_action(depth_alias)
     ld.add_action(auto_pilot)
 
     # logger + rosbag

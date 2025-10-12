@@ -31,32 +31,30 @@
         </material>
       </visual>
 
-      <!-- ToF modeled as a tiny depth camera: 60° x 60°, 1.0 m max -->
+      <!-- ToF modeled as a tiny depth camera: ~60° HFOV, 45° VFOV, 3.5 m max -->
       <sensor name="depth_camera" type="depth">
         <always_on>1</always_on>
         <update_rate>20</update_rate>
         <camera>
-          <!-- 60 degrees each way -->
-          <horizontal_fov>1.047</horizontal_fov>  <!-- ~60° -->
-          <vertical_fov>1.047</vertical_fov>      <!-- ~60° -->
+          <!-- 60° HFOV. Height < width to approximate ~45° VFOV without the deprecated tag. -->
+          <horizontal_fov>1.047</horizontal_fov>
           <image>
             <width>8</width>
             <height>8</height>
-            <format>R8G8B8</format>
+            <format>R_FLOAT32</format>
           </image>
           <clip>
             <near>0.02</near>
-            <far>1.0</far>                        <!-- MAX RANGE = 1 m -->
+            <far>3.5</far>                        <!-- Match VL53L7CX max range -->
           </clip>
           <depth_camera>
             <output>depths</output>
           </depth_camera>
         </camera>
 
-        <!-- Gazebo topic name; your bridge already reads this -->
-        <topic>depth</topic>
+        <!-- Gazebo base topic; depth image will be published on <topic>/depth_image -->
+        <topic>depth_camera</topic>
       </sensor>
     </link>
   </model>
 </sdf>
-

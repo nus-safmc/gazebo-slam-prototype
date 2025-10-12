@@ -186,9 +186,9 @@
     <!-- VelocityControl: subscribes to a global /cmd_vel -->
     <plugin name="gz::sim::systems::VelocityControl" filename="gz-sim-velocity-control-system">
       <topic>/cmd_vel</topic>
-      <use_world_frame>true</use_world_frame>
-      <max_linear_velocity>5</max_linear_velocity>
-      <max_angular_velocity>3</max_angular_velocity>
+      <use_world_frame>false</use_world_frame>
+      <max_linear_velocity>3</max_linear_velocity>
+      <max_angular_velocity>2</max_angular_velocity>
     </plugin>
 
     <!-- OdometryPublisher: publishes global /odom -->

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(tof_slam_sim)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -26,6 +26,7 @@ install(PROGRAMS
   src/scan_merger.py
   src/test_controller.py
   scripts/auto_pilot.py
+  scripts/depth_alias.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
