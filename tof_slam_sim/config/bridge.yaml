@@ -1,0 +1,53 @@
+ros__parameters:
+  bridges:
+    - topic_name: "/model/robot/cmd_vel"
+      ros_type_name: "geometry_msgs/msg/Twist"
+      gz_type_name: "gz.msgs.Twist"
+      direction: ROS_TO_GZ
+
+    - topic_name: "/model/robot/odometry"
+      ros_type_name: "nav_msgs/msg/Odometry"
+      gz_type_name: "gz.msgs.Odometry"
+      direction: GZ_TO_ROS
+
+    # Depth (repeat for your 8 sensors as needed)
+    - topic_name: "/model/robot/model/tof_front/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_front_right/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_right/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_back_right/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_back/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_back_left/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_left/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
+    - topic_name: "/model/robot/model/tof_front_left/link/sensor/depth_camera/depth"
+      ros_type_name: "sensor_msgs/msg/Image"
+      gz_type_name: "gz.msgs.Image"
+      direction: GZ_TO_ROS
+
