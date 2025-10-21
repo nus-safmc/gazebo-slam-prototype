@@ -4,20 +4,25 @@ description = "Development environment for RoboStack ROS packages"
 channels = ["https://prefix.dev/conda-forge"]
 platforms = ["linux-64", "win-64", "osx-64", "osx-arm64", "linux-aarch64"]
 
-# This will automatically activate the ros workspace on activation
-[target.win.activation]
-scripts = ["install/setup.bat"]
+# ROS environment is automatically activated by RoboStack via conda activation scripts
+# Additional environment configuration for ROS DDS settings
 
 [target.unix.activation]
-# For activation scripts, we use bash for Unix-like systems
-scripts = ["install/setup.bash"]
+scripts = ["scripts/activate-cyclonedds.sh"]
+
+[target.win.activation]
+scripts = ["scripts/activate-cyclonedds.bat"]
 
 # To build you can use - `pixi run -e <ros distro> build <Any other temporary args>`
-[feature.build.target.win-64.tasks]
-build = "colcon build --merge-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
 
-[feature.build.target.unix.tasks]
-build = "colcon build --symlink-install --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DPython_FIND_VIRTUALENV=ONLY -DPython3_FIND_VIRTUALENV=ONLY"
+# Guard tasks - show helpful errors when you forget '-e jazzy'
+[tasks]
+build = { cmd = 'python -c "import sys; print(\"This task requires: pixi run -e jazzy build\"); sys.exit(2)"' }
+sim   = { cmd = 'python -c "import sys; print(\"This task requires: pixi run -e jazzy sim\"); sys.exit(2)"' }
+slam  = { cmd = 'python -c "import sys; print(\"This task requires: pixi run -e jazzy slam\"); sys.exit(2)"' }
+clean = { cmd = 'python -c "import sys; print(\"Use: pixi run -e jazzy clean\"); sys.exit(2)"' }
+rebuild = { cmd = 'python -c "import sys; print(\"Use: pixi run -e jazzy rebuild\"); sys.exit(2)"' }
+
 
 # Dependencies used by all environments
 [dependencies]
@@ -41,7 +46,7 @@ libgl-devel = "*"
 [environments]
 # noetic = { features = ["noetic", "build"] }
 # humble = { features = ["humble", "build"] }
-jazzy = { features = ["jazzy", "build"] }
+jazzy = { features = ["jazzy"] }
 # kilted = { features = ["kilted", "build"] }
 
 ### ROS Noetic ####  
@@ -65,6 +70,40 @@ channels = ["https://prefix.dev/robostack-jazzy"]
 
 [feature.jazzy.dependencies]
 ros-jazzy-desktop = "*"
+python = "3.12.*"
+ros-jazzy-ros-base = ">=0.11.0,<0.12"
+ros-jazzy-rviz2 = ">=14.1.12,<15"
+ros-jazzy-ros-gz-sim = ">=1.0.16,<2"
+ros-jazzy-ros-gz-interfaces = ">=1.0.16,<2"
+ros-jazzy-ros-gz-bridge = ">=1.0.16,<2"
+ros-jazzy-slam-toolbox = ">=2.8.3,<3"
+ros-jazzy-sensor-msgs = ">=5.3.6,<6"
+ros-jazzy-geometry-msgs = ">=5.3.6,<6"
+ros-jazzy-std-msgs = ">=5.3.6,<6"
+ros-jazzy-nav-msgs = ">=5.3.6,<6"
+colcon-common-extensions = ">=0.3.0,<0.4"
+cmake = ">=4.1.1,<5"
+pkg-config = ">=0.29.2,<0.30"
+ninja = ">=1.13.1,<2"
+numpy = ">=1.26.4,<2"
+eigen = ">=3.4.0,<4"
+pcl = ">=1.15.0,<2"
+
+# Tasks that exist ONLY when you run: pixi run -e jazzy <task>
+[feature.jazzy.tasks]
+build   = "colcon build --merge-install --install-base $CONDA_PREFIX --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+clean   = "rm -rf build log"
+rebuild = "pixi run -e jazzy clean && pixi run -e jazzy build"
+sim     = "ros2 launch tof_slam_sim sim_with_bridge.launch.py"
+slam    = "ros2 launch tof_slam_sim slam_test.launch.py"
+
+# Unix/macOS: faster iteration with symlinks
+[feature.jazzy.target.unix.tasks]
+build = "colcon build --symlink-install --merge-install --install-base $CONDA_PREFIX --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
+
+# Windows variant (no symlinks)
+[feature.jazzy.target.win-64.tasks]
+build = "colcon build --merge-install --install-base %CONDA_PREFIX% --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
 
 ### ROS Kilted ####
 # [feature.kilted]
