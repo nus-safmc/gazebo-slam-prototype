@@ -15,6 +15,10 @@
       name="gz::sim::systems::UserCommands">
     </plugin>
     <plugin
+      filename="gz-sim-sensors-system"
+      name="gz::sim::systems::Sensors">
+    </plugin>
+    <plugin
       filename="gz-sim-scene-broadcaster-system"
       name="gz::sim::systems::SceneBroadcaster">
     </plugin>
@@ -207,6 +211,146 @@
       <static>true</static>
     </include>
 
+    <!-- Additional tall obstacles -->
+    <model name="pillar_tall_north">
+      <pose>-4 6 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.28</radius>
+              <length>3.6</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 1.8 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.28</radius>
+              <length>3.6</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 1.8 0 0 0</pose>
+          <material>
+            <ambient>0.6 0.6 0.65 1</ambient>
+            <diffuse>0.7 0.7 0.75 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="pillar_tall_east">
+      <pose>5 -2 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.22</radius>
+              <length>4.0</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 2.0 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.22</radius>
+              <length>4.0</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 2.0 0 0 0</pose>
+          <material>
+            <ambient>0.5 0.45 0.4 1</ambient>
+            <diffuse>0.55 0.5 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="tower_block_west">
+      <pose>-6 0 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>1.2 1.2 4.0</size>
+            </box>
+          </geometry>
+          <pose>0 0 2.0 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>1.2 1.2 4.0</size>
+            </box>
+          </geometry>
+          <pose>0 0 2.0 0 0 0</pose>
+          <material>
+            <ambient>0.3 0.3 0.35 1</ambient>
+            <diffuse>0.4 0.4 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="tower_block_center">
+      <pose>0 1.5 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.8 0.8 3.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.75 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.8 0.8 3.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.75 0 0 0</pose>
+          <material>
+            <ambient>0.5 0.4 0.3 1</ambient>
+            <diffuse>0.6 0.5 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="angled_wall_south">
+      <pose>4 -5 0 0 0 0.7854</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.5 5.0 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.5 5.0 2.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.25 0 0 0</pose>
+          <material>
+            <ambient>0.35 0.35 0.38 1</ambient>
+            <diffuse>0.45 0.45 0.5 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <!-- Danger Zones (visual only) -->
     <model name="danger_zone_1">
       <static>true</static>
@@ -227,10 +371,141 @@
       </link>
     </model>
 
+    <model name="maze_block_east">
+      <pose>6 3 0 0 0 1.0472</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.6 4.5 2.0</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.0 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.6 4.5 2.0</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.0 0 0 0</pose>
+          <material>
+            <ambient>0.45 0.35 0.3 1</ambient>
+            <diffuse>0.55 0.45 0.4 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="maze_block_northwest">
+      <pose>-5 3.5 0 0 0 0.4363</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.5 3.8 2.3</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.15 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.5 3.8 2.3</size>
+            </box>
+          </geometry>
+          <pose>0 0 1.15 0 0 0</pose>
+          <material>
+            <ambient>0.3 0.35 0.45 1</ambient>
+            <diffuse>0.4 0.45 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="cluster_cylinders">
+      <pose>-2.5 -3.5 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link_central">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.25</radius>
+              <length>2.8</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 1.4 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.25</radius>
+              <length>2.8</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 1.4 0 0 0</pose>
+          <material>
+            <ambient>0.55 0.55 0.6 1</ambient>
+            <diffuse>0.65 0.65 0.7 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="link_offset_north">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.2</radius>
+              <length>2.0</length>
+            </cylinder>
+          </geometry>
+          <pose>0.5 0.4 1.0 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.2</radius>
+              <length>2.0</length>
+            </cylinder>
+          </geometry>
+          <pose>0.5 0.4 1.0 0 0 0</pose>
+          <material>
+            <ambient>0.5 0.6 0.5 1</ambient>
+            <diffuse>0.6 0.7 0.6 1</diffuse>
+          </material>
+        </visual>
+      </link>
+      <link name="link_offset_south">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.18</radius>
+              <length>1.6</length>
+            </cylinder>
+          </geometry>
+          <pose>-0.45 -0.35 0.8 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.18</radius>
+              <length>1.6</length>
+            </cylinder>
+          </geometry>
+          <pose>-0.45 -0.35 0.8 0 0 0</pose>
+          <material>
+            <ambient>0.55 0.5 0.45 1</ambient>
+            <diffuse>0.65 0.6 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <include>
       <uri>model://rex_quadcopter</uri>
       <name>robot</name>
-      <pose>0 -8 0.05 0 0 0</pose>
+      <pose>8 -8 0.05 0 0 0</pose>
     </include>
   </world>
 </sdf>

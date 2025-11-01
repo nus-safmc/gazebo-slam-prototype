@@ -45,6 +45,7 @@ setup(
     entry_points={
         'console_scripts': [
             'auto_pilot = tof_slam_sim.auto_pilot:main',
+            'topic_monitor = tof_slam_sim.topic_monitor:main',
         ],
     },
 )

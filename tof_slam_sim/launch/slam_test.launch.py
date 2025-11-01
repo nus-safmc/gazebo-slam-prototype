@@ -23,13 +23,12 @@ def generate_launch_description():
             PathJoinSubstitution([pkg_tof_slam_sim, 'launch', 'sim_with_bridge.launch.py'])
         ])
     )
-    
-    # Launch depth to scan converter
-    depth_to_scan = Node(
-        package='tof_slam_sim',
-        executable='tof8x8_to_scan.py',
-        name='tof8x8_to_scan',
-        parameters=[{'use_sim_time': use_sim_time}]
+
+    # Include topic monitor
+    monitor_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([pkg_tof_slam_sim, 'launch', 'topic_monitor.launch.py'])
+        ])
     )
     
     # Launch scan merger
@@ -37,7 +36,8 @@ def generate_launch_description():
         package='tof_slam_sim',
         executable='scan_merger.py',
         name='scan_merger',
-        parameters=[{'use_sim_time': use_sim_time}]
+        parameters=[{'use_sim_time': use_sim_time,
+                     'base_frame': 'robot/base_footprint'}]
     )
     
     # Launch SLAM Toolbox
@@ -52,15 +52,6 @@ def generate_launch_description():
         ]
     )
 
-    auto_pilot = Node(
-        package='tof_slam_sim',
-        executable='auto_pilot',
-        name='auto_pilot',
-        output='screen',
-        # Uncomment or tweak env if you want different motion without code changes
-        # env={'AP_LIN_X':'1.0','AP_LIN_Z':'0.7','AP_ANG_Z':'0.3','AP_RATE':'15'}
-    )
-    
     # Launch RViz
     rviz = Node(
         package='rviz2',
@@ -77,10 +68,9 @@ def generate_launch_description():
     
     # Add nodes
     ld.add_action(sim_launch)
-    ld.add_action(depth_to_scan)
+    ld.add_action(monitor_launch)
     ld.add_action(scan_merger)
     ld.add_action(slam_toolbox)
     ld.add_action(rviz)
-    ld.add_action(auto_pilot)
     
     return ld

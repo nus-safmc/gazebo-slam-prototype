@@ -19,18 +19,13 @@ def generate_launch_description():
     # so the effective Gazebo topics are /model/robot/*.
     MODEL = 'robot'                 # instance name from your world include
     WORLD = 'playfield'             # world name used in /world/<WORLD>/... topics
-    DEPTH_STREAM = 'depth_image'    # Depth cameras publish floating ranges on the /depth_image stream.
     LOG_MONITOR_PATH = PathJoinSubstitution([pkg, 'scripts', 'log_monitor.py'])
     # =========================================
 
     # Common sensor names and helpers (used by both bridge + logger topic list)
     sensors = ['front','front_right','right','back_right','back','back_left','left','front_left']
-    def gz_depth(s):
-        # Depth sensors are nested models: /world/<WORLD>/model/<MODEL>/model/tof_<s>/...
-        return f'/world/{WORLD}/model/{MODEL}/model/tof_{s}/link/sensor/depth_camera/{DEPTH_STREAM}'
-
-    # Build the ROS topic names after remap for depth sensors
-    depth_ros_topics = [f'/tof_{s}/depth' for s in sensors]
+    def gz_scan(s):
+        return f'/scan/{s}'
 
     # ====== Logging / Bag arguments ======
     log_dir_arg  = DeclareLaunchArgument('log_dir',     default_value=os.path.expanduser('~/.ros/monitor_logs'))
@@ -65,41 +60,14 @@ def generate_launch_description():
     else:
         actions.append(ExecuteProcess(cmd=['gz', 'sim', '-r', world_path], output='screen'))
 
-    # ---- Bridge: /cmd_vel <-> VelocityControl, plus odom/tf/clock ----
-    bridge_cmd_odom = Node(
+    # ---- Bridge topics via YAML config ----
+    bridge_config = PathJoinSubstitution([pkg, 'config', 'bridge.yaml'])
+    bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='bridge_cmd_odom',
-        arguments=[
-            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
-            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
-        ],
+        name='bridge_all',
+        parameters=[{'config_file': bridge_config}],
         output='screen',
-    )
-
-    # ---- Bridge: 8x ToF depth images ----
-    depth_args = []
-    for s in sensors:
-        gz_topic = gz_depth(s)
-        depth_args.append(f'{gz_topic}@sensor_msgs/msg/Image@gz.msgs.Image')
-    depth_args += ['--ros-args']
-
-    bridge_all_depth = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='bridge_all_depth',
-        arguments=depth_args,
-        output='screen',
-    )
-
-    depth_alias = Node(
-        package='tof_slam_sim',
-        executable='depth_alias.py',
-        name='depth_alias',
-        output='screen',
-        parameters=[{'world': WORLD, 'model': MODEL, 'stream': DEPTH_STREAM}],
     )
 
     # ---- Autopilot: execute the bundled script so imports resolve consistently ----
@@ -143,8 +111,8 @@ def generate_launch_description():
         '--topics', '/tf:tf2_msgs/msg/TFMessage',
         '--topics', '/tf_static:tf2_msgs/msg/TFMessage',
     ]
-    for t in depth_ros_topics:
-        logger_cmd += ['--topics', f'{t}:sensor_msgs/msg/Image']
+    for t in [f'/scan/{s}' for s in sensors]:
+        logger_cmd += ['--topics', f'{t}:sensor_msgs/msg/LaserScan']
 
     logger_proc = ExecuteProcess(
         cmd=logger_cmd,
@@ -152,7 +120,7 @@ def generate_launch_description():
     )
 
     # ===== Optional rosbag2 recording of the same topics =====
-    bag_topics = ['/cmd_vel', '/odom', '/tf', '/tf_static'] + depth_ros_topics
+    bag_topics = ['/cmd_vel', '/odom', '/tf', '/tf_static'] + [f'/scan/{s}' for s in sensors]
     rosbag_proc = ExecuteProcess(
         cmd=['ros2', 'bag', 'record', '-o', LaunchConfiguration('bag_out')] + bag_topics,
         condition=IfCondition(LaunchConfiguration('record_bag')),
@@ -177,9 +145,7 @@ def generate_launch_description():
     # sim + bridges + autopilot
     for a in actions:
         ld.add_action(a)
-    ld.add_action(bridge_cmd_odom)
-    ld.add_action(bridge_all_depth)
-    ld.add_action(depth_alias)
+    ld.add_action(bridge_node)
     ld.add_action(auto_pilot)
 
     # logger + rosbag

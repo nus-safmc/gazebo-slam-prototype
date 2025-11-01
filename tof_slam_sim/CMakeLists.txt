@@ -27,6 +27,7 @@ install(PROGRAMS
   src/test_controller.py
   scripts/auto_pilot.py
   scripts/depth_alias.py
+  scripts/topic_monitor.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -35,6 +36,11 @@ install(PROGRAMS
 install(PROGRAMS scripts/auto_pilot.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME auto_pilot
+)
+
+install(PROGRAMS scripts/topic_monitor.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME topic_monitor
 )
 
 # Install launch files

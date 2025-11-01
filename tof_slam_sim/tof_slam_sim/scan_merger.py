@@ -13,6 +13,11 @@ class ScanMerger(Node):
     def __init__(self):
         super().__init__('scan_merger')
         
+        self.base_frame = self.declare_parameter(
+            'base_frame',
+            'robot/base_footprint'
+        ).value
+
         # Sensor parameters
         self.sensor_names = ['front', 'front_right', 'right', 'back_right',
                            'back', 'back_left', 'left', 'front_left']
@@ -68,7 +73,7 @@ class ScanMerger(Node):
 
             merged_scan = LaserScan()
             merged_scan.header = template_scan.header
-            merged_scan.header.frame_id = 'base_link'
+            merged_scan.header.frame_id = self.base_frame
             merged_scan.angle_min = -math.pi
             merged_scan.angle_max = math.pi
             merged_scan.angle_increment = math.pi / 32.0  # 64 points total

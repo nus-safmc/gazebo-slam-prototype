@@ -69,9 +69,12 @@ def main() -> None:
     node = AutoPilot()
     try:
         rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 __all__ = ['AutoPilot', 'main']

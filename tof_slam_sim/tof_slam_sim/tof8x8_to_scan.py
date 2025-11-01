@@ -15,6 +15,11 @@ class ToF8x8ToScan(Node):
     def __init__(self):
         super().__init__('tof8x8_to_scan')
         
+        self.base_frame = self.declare_parameter(
+            'base_frame',
+            'robot/base_footprint'
+        ).value
+
         # QoS profile for depth data
         depth_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -92,7 +97,7 @@ class ToF8x8ToScan(Node):
             # Create LaserScan message
             scan_msg = LaserScan()
             scan_msg.header = msg.header
-            scan_msg.header.frame_id = 'base_link'
+            scan_msg.header.frame_id = self.base_frame
             scan_msg.angle_min = -self.h_fov / 2.0
             scan_msg.angle_max = self.h_fov / 2.0
             if len(ranges) > 1:
