@@ -64,7 +64,7 @@ Visualization Manager:
       Min Intensity: 0
       Name: LaserScan
       Position Transformer: XYZ
-      Queue Size: 10
+      Queue Size: 100
       Selectable: true
       Size (Pixels): 3
       Size (m): 0.009999999776482582
@@ -106,7 +106,7 @@ Visualization Manager:
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: map
+    Fixed Frame: robot/odom
     Frame Rate: 30
   Name: root
   Tools:

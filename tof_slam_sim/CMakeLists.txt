@@ -28,6 +28,8 @@ install(PROGRAMS
   scripts/auto_pilot.py
   scripts/depth_alias.py
   scripts/topic_monitor.py
+  scripts/map_tf_fallback.py
+  scripts/frame_watchdog.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -42,6 +44,17 @@ install(PROGRAMS scripts/topic_monitor.py
   DESTINATION lib/${PROJECT_NAME}
   RENAME topic_monitor
 )
+
+install(PROGRAMS scripts/map_tf_fallback.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME map_tf_fallback
+)
+
+install(PROGRAMS scripts/frame_watchdog.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME frame_watchdog
+)
+
 
 # Install launch files
 install(DIRECTORY

@@ -2,6 +2,7 @@
 
 import rclpy
 from rclpy.node import Node
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 import numpy as np
 import math
@@ -31,8 +32,8 @@ class ScanMerger(Node):
                 10,
             )
 
-        # Publish merged scan at ~10 Hz using the most recent data from each sensor.
-        self.publish_timer = self.create_timer(0.1, self.publish_merged)
+        # Publish merged scan at ~5 Hz using the most recent data from each sensor.
+        self.publish_timer = self.create_timer(0.2, self.publish_merged)
 
         # Create merged scan publisher
         self.merged_pub = self.create_publisher(
@@ -56,12 +57,13 @@ class ScanMerger(Node):
         try:
             # Pick the freshest scan available as a template.
             template_scan = None
-            latest_time = None
+            latest_time: Time | None = None
             for scan in self.latest_scans.values():
                 if scan is None:
                     continue
-                if latest_time is None or scan.header.stamp > latest_time:
-                    latest_time = scan.header.stamp
+                stamp = Time.from_msg(scan.header.stamp)
+                if latest_time is None or stamp > latest_time:
+                    latest_time = stamp
                     template_scan = scan
 
             if template_scan is None:

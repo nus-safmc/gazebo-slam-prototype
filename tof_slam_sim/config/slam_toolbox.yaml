@@ -1,9 +1,9 @@
 slam_toolbox:
   ros__parameters:
     # Frames / I/O
-    odom_frame: odom
-    map_frame: map
-    base_frame: base_link
+    odom_frame: robot/odom
+    map_frame: robot/map
+    base_frame: robot/base_link
     scan_topic: /scan_merged
 
     # Mode

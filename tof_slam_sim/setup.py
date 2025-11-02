@@ -46,6 +46,8 @@ setup(
         'console_scripts': [
             'auto_pilot = tof_slam_sim.auto_pilot:main',
             'topic_monitor = tof_slam_sim.topic_monitor:main',
+            'map_tf_fallback = tof_slam_sim.map_tf_fallback:main',
+            'frame_watchdog = tof_slam_sim.frame_watchdog:main',
         ],
     },
 )

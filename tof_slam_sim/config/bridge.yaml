@@ -23,49 +23,49 @@
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/front"
-  gz_topic_name: "/scan/front"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_front/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/front_right"
-  gz_topic_name: "/scan/front_right"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_front_right/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/right"
-  gz_topic_name: "/scan/right"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_right/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/back_right"
-  gz_topic_name: "/scan/back_right"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_back_right/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/back"
-  gz_topic_name: "/scan/back"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_back/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/back_left"
-  gz_topic_name: "/scan/back_left"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_back_left/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/left"
-  gz_topic_name: "/scan/left"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_left/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
 
 - ros_topic_name: "/scan/front_left"
-  gz_topic_name: "/scan/front_left"
+  gz_topic_name: "/world/playfield/model/robot/link/base_link/sensor/tof_front_left/scan"
   ros_type_name: "sensor_msgs/msg/LaserScan"
   gz_type_name: "gz.msgs.LaserScan"
   direction: GZ_TO_ROS
