@@ -9,7 +9,9 @@ def generate_launch_description():
         '/odom:nav_msgs/msg/Odometry:reliable',
         '/tf:tf2_msgs/msg/TFMessage:reliable',
         '/tf_static:tf2_msgs/msg/TFMessage:latched',
+        '/map:nav_msgs/msg/OccupancyGrid:reliable+latched',
     ] + [f'/scan/{name}:sensor_msgs/msg/LaserScan:best_effort' for name in sensors]
+    topics.append('/scan_merged:sensor_msgs/msg/LaserScan:best_effort')
 
     monitor_node = Node(
         package='tof_slam_sim',

@@ -1,7 +1,7 @@
 from launch import LaunchDescription
 from launch.actions import ExecuteProcess, SetEnvironmentVariable, DeclareLaunchArgument
-from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 from launch.conditions import IfCondition
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 import platform
@@ -56,7 +56,6 @@ def generate_launch_description():
     actions = []
     if is_macos:
         actions.append(ExecuteProcess(cmd=['gz', 'sim', '-s', '-r', world_path], output='screen'))
-        actions.append(ExecuteProcess(cmd=['gz', 'sim', '-g'], output='screen'))
     else:
         actions.append(ExecuteProcess(cmd=['gz', 'sim', '-r', world_path], output='screen'))
 
@@ -85,14 +84,12 @@ def generate_launch_description():
         'ROS_LOG_DIR': '/tmp/ros_logs',
         'RCUTILS_LOGGING_USE_STDOUT': '1'
     }
-    auto_pilot = ExecuteProcess(
-        cmd=[
-            sys.executable,
-            '-u',
-            PathJoinSubstitution([pkg, 'scripts', 'auto_pilot.py']),
-        ],
+    auto_pilot = Node(
+        package='tof_slam_sim',
+        executable='auto_pilot',
+        name='auto_pilot',
+        output='log',
         env=autopilot_env,
-        output='screen',
     )
 
     # ===== Logger: run scripts/log_monitor.py with your topics =====

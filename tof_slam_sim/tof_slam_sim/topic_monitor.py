@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """ROS 2 node that periodically checks critical topics for recent traffic."""
 
 from __future__ import annotations
@@ -14,12 +15,14 @@ from rclpy.qos import (
     HistoryPolicy,
     QoSProfile,
     ReliabilityPolicy,
+    QoSPolicyKind,
 )
+from rclpy.qos_event import QoSRequestedIncompatibleQoSInfo, SubscriptionEventCallbacks
 from rclpy.time import Time
 from rosidl_runtime_py.utilities import get_message
 
 
-DEFAULT_SENSOR_NAMES = [
+DEFAULT_SENSOR_NAMES: Tuple[str, ...] = (
     'front',
     'front_right',
     'right',
@@ -28,17 +31,17 @@ DEFAULT_SENSOR_NAMES = [
     'back_left',
     'left',
     'front_left',
-]
+)
 
-DEFAULT_TOPIC_SPECS = [
+DEFAULT_TOPIC_SPECS: Tuple[str, ...] = (
     '/cmd_vel:geometry_msgs/msg/Twist:reliable',
     '/odom:nav_msgs/msg/Odometry:reliable',
     '/tf:tf2_msgs/msg/TFMessage:reliable',
     '/tf_static:tf2_msgs/msg/TFMessage:latched',
-] + [
+) + tuple(
     f'/scan/{name}:sensor_msgs/msg/LaserScan:best_effort'
     for name in DEFAULT_SENSOR_NAMES
-]
+)
 
 
 @dataclass
@@ -50,13 +53,17 @@ class TopicState:
     last_msg_time: Time | None = None
     total_count: int = 0
     count_at_last_report: int = 0
+    incompatible_qos_total: int = 0
+    last_incompatible_policy: QoSPolicyKind | None = None
 
 
 def _parse_topic_spec(spec: str) -> Tuple[str, str, bool, ReliabilityPolicy]:
-    """Parse specs like '/scan/front:sensor_msgs/msg/LaserScan:best_effort'."""
+    """Parse a topic spec string into components."""
     parts = spec.split(':')
     if len(parts) < 2:
-        raise ValueError(f'Invalid topic spec "{spec}". Expected /name:pkg/msg/Type[:options]')
+        raise ValueError(
+            f'Invalid topic spec "{spec}". Expected "/name:pkg/msg/Type[:options]"'
+        )
 
     topic = parts[0].strip()
     msg_type = parts[1].strip()
@@ -70,7 +77,9 @@ def _parse_topic_spec(spec: str) -> Tuple[str, str, bool, ReliabilityPolicy]:
 
     latched = 'latched' in options
     if 'best_effort' in options and 'reliable' in options:
-        raise ValueError(f'Topic spec "{spec}" cannot request both reliable and best_effort QoS.')
+        raise ValueError(
+            f'Topic spec "{spec}" cannot request both reliable and best_effort QoS.'
+        )
 
     if 'best_effort' in options:
         reliability = ReliabilityPolicy.BEST_EFFORT
@@ -87,8 +96,16 @@ def _qos_profile(latched: bool, reliability: ReliabilityPolicy) -> QoSProfile:
         history=HistoryPolicy.KEEP_LAST,
         depth=1 if latched else 10,
         reliability=reliability,
-        durability=DurabilityPolicy.TRANSIENT_LOCAL if latched else DurabilityPolicy.VOLATILE,
+        durability=DurabilityPolicy.TRANSIENT_LOCAL
+        if latched
+        else DurabilityPolicy.VOLATILE,
     )
+
+
+def _ensure_list(value: Sequence[str] | str) -> List[str]:
+    if isinstance(value, str):
+        return [v.strip() for v in value.split(',') if v.strip()]
+    return list(value)
 
 
 class TopicMonitor(Node):
@@ -97,20 +114,23 @@ class TopicMonitor(Node):
     def __init__(self) -> None:
         super().__init__('topic_monitor')
 
-        topic_specs = self.declare_parameter('topics', DEFAULT_TOPIC_SPECS).value
-        report_period_sec = float(self.declare_parameter('report_period_sec', 5.0).value)
-        stale_seconds = float(self.declare_parameter('stale_seconds', 5.0).value)
+        topic_specs_param = self.declare_parameter('topics', list(DEFAULT_TOPIC_SPECS))
+        report_period_param = self.declare_parameter('report_period_sec', 5.0)
+        stale_seconds_param = self.declare_parameter('stale_seconds', 5.0)
+
+        topic_specs = _ensure_list(topic_specs_param.value)
+        report_period_sec = float(report_period_param.value)
+        stale_seconds = float(stale_seconds_param.value)
 
         self._stale_duration = Duration(seconds=stale_seconds)
         self._topic_states: Dict[str, TopicState] = {}
-
         self._clock: Clock = self.get_clock()
 
         for spec in topic_specs:
             try:
                 topic, type_str, latched, reliability = _parse_topic_spec(spec)
                 msg_type = get_message(type_str)
-            except Exception as exc:
+            except Exception as exc:  # pragma: no cover - defensive
                 self.get_logger().error(f'Cannot monitor spec "{spec}": {exc}')
                 continue
 
@@ -124,27 +144,59 @@ class TopicMonitor(Node):
 
             qos = _qos_profile(latched, reliability)
 
-            def _make_callback(topic_name: str) -> Callable:
-                def _cb(msg) -> None:
-                    del msg  # unused
+            def _make_callback(topic_name: str) -> Callable[[object], None]:
+                def _cb(msg: object) -> None:
+                    del msg
                     st = self._topic_states[topic_name]
                     st.last_msg_time = self._clock.now()
                     st.total_count += 1
+
                 return _cb
+
+            callbacks = SubscriptionEventCallbacks(
+                incompatible_qos=self._make_incompatible_qos_cb(topic)
+            )
 
             self.create_subscription(
                 msg_type,
                 topic,
                 _make_callback(topic),
-                qos
+                qos,
+                event_callbacks=callbacks,
             )
             qos_label = 'latched' if latched else reliability.name.lower()
-            self.get_logger().info(f'Monitoring {topic} [{type_str}] ({qos_label})')
+            self.get_logger().info(
+                f'Monitoring {topic} [{type_str}] ({qos_label})'
+            )
 
         if not self._topic_states:
             self.get_logger().warn('No topics configured for monitoring.')
 
-        self._report_timer = self.create_timer(report_period_sec, self._report_status)
+        self._report_timer = self.create_timer(
+            max(0.1, report_period_sec), self._report_status
+        )
+
+    def _make_incompatible_qos_cb(
+        self, topic_name: str
+    ) -> Callable[[QoSRequestedIncompatibleQoSInfo], None]:
+        def _cb(event: QoSRequestedIncompatibleQoSInfo) -> None:
+            state = self._topic_states.get(topic_name)
+            if state is None:
+                return
+            state.incompatible_qos_total = event.total_count
+            try:
+                policy = QoSPolicyKind(event.last_policy_kind)
+            except ValueError:
+                policy = None
+            state.last_incompatible_policy = policy
+            policy_name = policy.name if policy is not None else str(event.last_policy_kind)
+            self.get_logger().warning(
+                f'QoS incompatibility for {topic_name}: requested {state.reliability.name} '
+                f'but publisher offered incompatible policy ({policy_name}). '
+                f'Total mismatches: {event.total_count}'
+            )
+
+        return _cb
 
     def _report_status(self) -> None:
         if not self._topic_states:
@@ -170,19 +222,42 @@ class TopicMonitor(Node):
                         status = 'NO LATCHED MESSAGE RECEIVED'
                         warn = True
                     else:
-                        status = f'OK (latched, last {seconds_since:.1f}s ago, total {state.total_count})'
+                        status = (
+                            f'OK (latched, last {seconds_since:.1f}s ago, '
+                            f'total {state.total_count})'
+                        )
                 else:
                     stale = last_dt > self._stale_duration or delta_count == 0
                     if stale:
                         warn = True
                         if delta_count == 0:
-                            status = f'STALE - no new messages in window (last {seconds_since:.1f}s ago)'
+                            status = (
+                                f'STALE - no new messages in window '
+                                f'(last {seconds_since:.1f}s ago)'
+                            )
                         else:
-                            status = f'STALE - last {seconds_since:.1f}s ago (+{delta_count} msgs)'
+                            status = (
+                                f'STALE - last {seconds_since:.1f}s ago '
+                                f'(+{delta_count} msgs)'
+                            )
                     else:
-                        status = f'OK - last {seconds_since:.1f}s ago (+{delta_count} msgs)'
+                        status = (
+                            f'OK - last {seconds_since:.1f}s ago '
+                            f'(+{delta_count} msgs)'
+                        )
 
             report_lines.append(f'{state.name}: {status}')
+            if state.incompatible_qos_total > 0:
+                policy = (
+                    state.last_incompatible_policy.name
+                    if state.last_incompatible_policy is not None
+                    else 'UNKNOWN'
+                )
+                report_lines.append(
+                    f'{state.name}: QoS mismatch detected (last policy={policy}, '
+                    f'total={state.incompatible_qos_total})'
+                )
+                warn = True
 
         message = 'Topic status:\n' + '\n'.join(f'  - {line}' for line in report_lines)
         if warn:
