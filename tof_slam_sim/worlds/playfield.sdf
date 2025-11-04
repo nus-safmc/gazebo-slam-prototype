@@ -197,6 +197,117 @@
       <static>true</static>
     </include>
 
+    <!-- Additional nearby clutter around launch pad -->
+    <model name="start_barrier_arc">
+      <pose>0 -7.2 0 0 0 0.3491</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>2.8 0.3 1.4</size>
+            </box>
+          </geometry>
+          <pose>0 0 0.7 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>2.8 0.3 1.4</size>
+            </box>
+          </geometry>
+          <pose>0 0 0.7 0 0 0</pose>
+          <material>
+            <ambient>0.45 0.45 0.5 1</ambient>
+            <diffuse>0.55 0.55 0.65 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="start_box_stack_west">
+      <pose>-1.9 -7.4 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.6 0.6 1.8</size>
+            </box>
+          </geometry>
+          <pose>0 0 0.9 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.6 0.6 1.8</size>
+            </box>
+          </geometry>
+          <pose>0 0 0.9 0 0 0</pose>
+          <material>
+            <ambient>0.55 0.4 0.35 1</ambient>
+            <diffuse>0.65 0.5 0.45 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="start_box_stack_east">
+      <pose>1.9 -7.4 0 0 0 0</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box>
+              <size>0.6 0.6 1.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 0.75 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box>
+              <size>0.6 0.6 1.5</size>
+            </box>
+          </geometry>
+          <pose>0 0 0.75 0 0 0</pose>
+          <material>
+            <ambient>0.35 0.4 0.45 1</ambient>
+            <diffuse>0.45 0.5 0.55 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <model name="start_low_bar">
+      <pose>0.5 -8.6 0 0 0 1.0472</pose>
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder>
+              <radius>0.15</radius>
+              <length>2.5</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 0.4 0 0 0</pose>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder>
+              <radius>0.15</radius>
+              <length>2.5</length>
+            </cylinder>
+          </geometry>
+          <pose>0 0 0.4 0 0 0</pose>
+          <material>
+            <ambient>0.4 0.45 0.4 1</ambient>
+            <diffuse>0.5 0.55 0.5 1</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
     <!-- Pillars (example layout - can be modified) -->
     <include>
       <uri>model://pillar</uri>
