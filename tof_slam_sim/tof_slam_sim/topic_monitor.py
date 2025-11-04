@@ -20,6 +20,7 @@ from rclpy.qos import (
 from rclpy.qos_event import QoSRequestedIncompatibleQoSInfo, SubscriptionEventCallbacks
 from rclpy.time import Time
 from rosidl_runtime_py.utilities import get_message
+from tf2_ros import Buffer, TransformListener, TransformException
 
 
 DEFAULT_SENSOR_NAMES: Tuple[str, ...] = (
@@ -38,9 +39,17 @@ DEFAULT_TOPIC_SPECS: Tuple[str, ...] = (
     '/odom:nav_msgs/msg/Odometry:reliable',
     '/tf:tf2_msgs/msg/TFMessage:reliable',
     '/tf_static:tf2_msgs/msg/TFMessage:latched',
+    '/map:nav_msgs/msg/OccupancyGrid:reliable',
+    '/scan_merged:sensor_msgs/msg/LaserScan:reliable',
 ) + tuple(
     f'/scan/{name}:sensor_msgs/msg/LaserScan:best_effort'
     for name in DEFAULT_SENSOR_NAMES
+)
+
+DEFAULT_TRANSFORM_SPECS: Tuple[str, ...] = (
+    'robot/map->robot/odom',
+    'robot/odom->robot/base_link',
+    'robot/map->robot/base_link',
 )
 
 
@@ -55,6 +64,16 @@ class TopicState:
     count_at_last_report: int = 0
     incompatible_qos_total: int = 0
     last_incompatible_policy: QoSPolicyKind | None = None
+
+
+@dataclass
+class TransformState:
+    parent: str
+    child: str
+    total_success: int = 0
+    success_at_last_report: int = 0
+    last_success_time: Time | None = None
+    last_exception: str | None = None
 
 
 def _parse_topic_spec(spec: str) -> Tuple[str, str, bool, ReliabilityPolicy]:
@@ -117,14 +136,22 @@ class TopicMonitor(Node):
         topic_specs_param = self.declare_parameter('topics', list(DEFAULT_TOPIC_SPECS))
         report_period_param = self.declare_parameter('report_period_sec', 5.0)
         stale_seconds_param = self.declare_parameter('stale_seconds', 5.0)
+        transform_specs_param = self.declare_parameter(
+            'required_transforms', list(DEFAULT_TRANSFORM_SPECS)
+        )
 
         topic_specs = _ensure_list(topic_specs_param.value)
         report_period_sec = float(report_period_param.value)
         stale_seconds = float(stale_seconds_param.value)
+        transform_specs = _ensure_list(transform_specs_param.value)
 
         self._stale_duration = Duration(seconds=stale_seconds)
         self._topic_states: Dict[str, TopicState] = {}
         self._clock: Clock = self.get_clock()
+        self._tf_buffer: Buffer | None = None
+        self._tf_listener: TransformListener | None = None
+        self._transform_pairs: List[Tuple[str, str]] = []
+        self._transform_states: Dict[Tuple[str, str], TransformState] = {}
 
         for spec in topic_specs:
             try:
@@ -171,6 +198,32 @@ class TopicMonitor(Node):
 
         if not self._topic_states:
             self.get_logger().warn('No topics configured for monitoring.')
+
+        if transform_specs:
+            for spec in transform_specs:
+                if '->' not in spec:
+                    self.get_logger().error(
+                        f'Invalid transform spec "{spec}". Expected "parent->child".'
+                    )
+                    continue
+                parent, child = (part.strip() for part in spec.split('->', 1))
+                if not parent or not child:
+                    self.get_logger().error(
+                        f'Invalid transform spec "{spec}". Parent/child cannot be empty.'
+                    )
+                    continue
+                self._transform_pairs.append((parent, child))
+
+            if self._transform_pairs:
+                self._tf_buffer = Buffer(cache_time=Duration(seconds=10.0))
+                self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=True)
+                for parent, child in self._transform_pairs:
+                    self._transform_states[(parent, child)] = TransformState(parent, child)
+                self.get_logger().info(
+                    'Tracking transforms: ' + ', '.join(
+                        f'{p}->{c}' for p, c in self._transform_pairs
+                    )
+                )
 
         self._report_timer = self.create_timer(
             max(0.1, report_period_sec), self._report_status
@@ -258,6 +311,49 @@ class TopicMonitor(Node):
                     f'total={state.incompatible_qos_total})'
                 )
                 warn = True
+
+        if self._tf_buffer is not None and self._transform_pairs:
+            for parent, child in self._transform_pairs:
+                state = self._transform_states[(parent, child)]
+                try:
+                    transform = self._tf_buffer.lookup_transform(
+                        parent,
+                        child,
+                        Time(seconds=0.0),
+                        timeout=Duration(seconds=0.5),
+                    )
+                    state.total_success += 1
+                    stamp = Time.from_msg(transform.header.stamp)
+                    if stamp.nanoseconds == 0:
+                        state.last_success_time = self._clock.now()
+                    else:
+                        state.last_success_time = stamp
+                    delta = state.total_success - state.success_at_last_report
+                    state.success_at_last_report = state.total_success
+                    state.last_exception = None
+                    if state.last_success_time is None:
+                        seconds_since = float('inf')
+                    else:
+                        last_dt = now - state.last_success_time
+                        seconds_since = last_dt.nanoseconds * 1e-9
+                    report_lines.append(
+                        f'{parent}->{child}: OK - last {seconds_since:.1f}s ago '
+                        f'(+{delta} lookups)'
+                    )
+                except TransformException as exc:
+                    warn = True
+                    state.last_exception = exc.__class__.__name__
+                    delta = state.total_success - state.success_at_last_report
+                    if state.last_success_time is None:
+                        status = 'NO TRANSFORM RECEIVED'
+                    else:
+                        last_dt = now - state.last_success_time
+                        seconds_since = last_dt.nanoseconds * 1e-9
+                        status = f'last {seconds_since:.1f}s ago'
+                    report_lines.append(
+                        f'{parent}->{child}: MISSING ({state.last_exception}) '
+                        f'(+{delta} lookups, {status})'
+                    )
 
         message = 'Topic status:\n' + '\n'.join(f'  - {line}' for line in report_lines)
         if warn:

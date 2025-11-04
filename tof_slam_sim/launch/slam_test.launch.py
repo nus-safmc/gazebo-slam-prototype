@@ -3,11 +3,17 @@ from launch.actions import (
     IncludeLaunchDescription,
     DeclareLaunchArgument,
     SetEnvironmentVariable,
+    EmitEvent,
+    RegisterEventHandler,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
-from launch_ros.actions import Node
+from launch.events import matches_action
+from launch_ros.actions import Node, LifecycleNode
 from launch_ros.substitutions import FindPackageShare
+from launch_ros.events.lifecycle import ChangeState
+from launch_ros.event_handlers import OnStateTransition
+from lifecycle_msgs.msg import Transition
 
 
 def generate_launch_description():
@@ -23,6 +29,7 @@ def generate_launch_description():
     set_home = SetEnvironmentVariable('HOME', '/home/rex')
     set_ros_log_dir = SetEnvironmentVariable('ROS_LOG_DIR', '/home/rex/.ros/log')
     set_stdout = SetEnvironmentVariable('RCUTILS_LOGGING_USE_STDOUT', '1')
+    set_rmw_impl = SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
 
     sim_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -48,16 +55,51 @@ def generate_launch_description():
         }],
     )
 
-    slam_toolbox = Node(
+    slam_toolbox_params = PathJoinSubstitution(
+        [pkg_tof_slam_sim, 'config', 'slam_toolbox.yaml']
+    )
+
+    slam_params_override = {
+        'scan_topic': '/scan_merged',
+        'odom_frame': 'robot/odom',
+        'map_frame': 'robot/map',
+        'base_frame': 'robot/base_link',
+    }
+
+    slam_toolbox = LifecycleNode(
         package='slam_toolbox',
         executable='sync_slam_toolbox_node',
         name='slam_toolbox',
+        namespace='',
         output='screen',
         parameters=[
-            PathJoinSubstitution([pkg_tof_slam_sim, 'config', 'slam_toolbox.yaml']),
+            slam_toolbox_params,
+            slam_params_override,
             {'use_sim_time': use_sim_time},
         ],
         remappings=[('scan', '/scan_merged')],
+    )
+
+    slam_configure = EmitEvent(
+        event=ChangeState(
+            lifecycle_node_matcher=matches_action(slam_toolbox),
+            transition_id=Transition.TRANSITION_CONFIGURE,
+        )
+    )
+
+    slam_activate = RegisterEventHandler(
+        OnStateTransition(
+            target_lifecycle_node=slam_toolbox,
+            goal_state='inactive',
+            entities=[
+                EmitEvent(
+                    event=ChangeState(
+                        lifecycle_node_matcher=matches_action(slam_toolbox),
+                        transition_id=Transition.TRANSITION_ACTIVATE,
+                    )
+                )
+            ],
+        )
     )
 
     static_world_to_odom = Node(
@@ -124,10 +166,13 @@ def generate_launch_description():
     ld.add_action(set_home)
     ld.add_action(set_ros_log_dir)
     ld.add_action(set_stdout)
+    ld.add_action(set_rmw_impl)
     ld.add_action(sim_launch)
     ld.add_action(monitor_launch)
     ld.add_action(scan_merger)
     ld.add_action(slam_toolbox)
+    ld.add_action(slam_configure)
+    ld.add_action(slam_activate)
     ld.add_action(static_world_to_odom)
     ld.add_action(map_tf_fallback)
     ld.add_action(static_basefoot_to_baselink)

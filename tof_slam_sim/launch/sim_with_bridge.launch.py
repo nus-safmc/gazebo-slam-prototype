@@ -82,7 +82,9 @@ def generate_launch_description():
         'AP_RATE':  os.environ.get('AP_RATE', '10.0'),
         'RCL_LOGGING_DIR': '/tmp/ros_logs',
         'ROS_LOG_DIR': '/tmp/ros_logs',
-        'RCUTILS_LOGGING_USE_STDOUT': '1'
+        'RCUTILS_LOGGING_USE_STDOUT': '1',
+        'RMW_IMPLEMENTATION': os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+        'PYTHONFAULTHANDLER': os.environ.get('PYTHONFAULTHANDLER', '1'),
     }
     auto_pilot = Node(
         package='tof_slam_sim',
