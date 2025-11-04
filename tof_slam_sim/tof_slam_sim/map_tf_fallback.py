@@ -1,46 +1,51 @@
 #!/usr/bin/env python3
-import math
+from __future__ import annotations
+
 import rclpy
 from rclpy.node import Node
 from geometry_msgs.msg import TransformStamped
-from tf2_ros import TransformBroadcaster, Buffer, TransformListener
+from tf2_ros import TransformBroadcaster
+
 
 class MapTFFallback(Node):
-    def __init__(self):
+    """Broadcast a one-shot identity map->odom transform at startup."""
+
+    def __init__(self) -> None:
         super().__init__('map_tf_fallback')
         self.declare_parameter('parent_frame', 'robot/map')
         self.declare_parameter('child_frame', 'robot/odom')
-        self.parent = self.get_parameter('parent_frame').get_parameter_value().string_value
-        self.child = self.get_parameter('child_frame').get_parameter_value().string_value
+        self.parent = (
+            self.get_parameter('parent_frame').get_parameter_value().string_value
+        )
+        self.child = (
+            self.get_parameter('child_frame').get_parameter_value().string_value
+        )
 
         self.br = TransformBroadcaster(self)
-        self.buf = Buffer()
-        self.lst = TransformListener(self.buf, self, spin_thread=False)
         self.timer = self.create_timer(0.1, self._tick)
-        self.had_real = False
-        self.get_logger().info(f'Waiting for real TF {self.parent} -> {self.child}; publishing identity fallback at 10.0 Hz until then.')
+        self._sent = False
+        self.get_logger().info(
+            f'Publishing single identity TF {self.parent}->{self.child} during startup.'
+        )
 
-    async def _try_lookup(self):
-        try:
-            return await self.buf.lookup_transform_async(self.parent, self.child, rclpy.time.Time())
-        except Exception:
-            return None
-
-    def _tick(self):
-        if self.had_real:
+    def _tick(self) -> None:
+        if self._sent:
             return
-        # we just publish identity; rviz/slam will switch to real TF once available
         t = TransformStamped()
         t.header.stamp = self.get_clock().now().to_msg()
         t.header.frame_id = self.parent
         t.child_frame_id = self.child
-        t.transform.translation.x = 0.0
-        t.transform.translation.y = 0.0
-        t.transform.translation.z = 0.0
         t.transform.rotation.w = 1.0
         self.br.sendTransform(t)
+        self._sent = True
+        self.destroy_timer(self.timer)
+        self.timer = None
+        self.get_logger().info(
+            f'Fallback TF {self.parent}->{self.child} broadcast once; awaiting live publisher.'
+        )
 
-def main():
+
+def main() -> None:
     rclpy.init()
     node = MapTFFallback()
     try:
@@ -48,6 +53,11 @@ def main():
     except KeyboardInterrupt:
         pass
     finally:
+        if getattr(node, 'timer', None) is not None:
+            node.destroy_timer(node.timer)
         node.destroy_node()
         if rclpy.ok():
             rclpy.shutdown()
+
+
+__all__ = ['MapTFFallback', 'main']

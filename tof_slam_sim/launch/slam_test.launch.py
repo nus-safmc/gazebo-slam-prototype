@@ -5,6 +5,7 @@ from launch.actions import (
     SetEnvironmentVariable,
     EmitEvent,
     RegisterEventHandler,
+    TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -80,11 +81,16 @@ def generate_launch_description():
         remappings=[('scan', '/scan_merged')],
     )
 
-    slam_configure = EmitEvent(
-        event=ChangeState(
-            lifecycle_node_matcher=matches_action(slam_toolbox),
-            transition_id=Transition.TRANSITION_CONFIGURE,
-        )
+    slam_configure = TimerAction(
+        period=1.0,
+        actions=[
+            EmitEvent(
+                event=ChangeState(
+                    lifecycle_node_matcher=matches_action(slam_toolbox),
+                    transition_id=Transition.TRANSITION_CONFIGURE,
+                )
+            )
+        ],
     )
 
     slam_activate = RegisterEventHandler(
