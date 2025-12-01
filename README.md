@@ -1,6 +1,6 @@
 # Gazebo SLAM Prototype
 
-This project provides a simulation environment for validating 2D SLAM using an array of 8 simulated VL53L7CX ToF sensors in Gazebo Harmonic with ROS 2.
+Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in the Loop (SITL)
 
 ## Quick Start
 
@@ -33,27 +33,19 @@ This project provides a simulation environment for validating 2D SLAM using an a
 
 Once in the pixi shell, you can:
 
-1. **Launch the simulation with ROS bridge:**
+**Launch the PX4 SITL environment:**
    ```bash
-   ros2 launch tof_slam_sim sim_with_bridge.launch.py
+   pixi run -e jazzy px4_sitl
    ```
 
-2. **Launch SLAM for testing:**
-   ```bash
-   ros2 launch tof_slam_sim slam_test.launch.py
-   ```
-
-Or use the convenience commands:
-```bash
-# Launch simulation
-pixi run -e jazzy sim
-
-# Launch SLAM test
-pixi run -e jazzy slam
-
-# Clean and rebuild
-pixi run -e jazzy rebuild
+**Viewing ROS topics**
+The list of ROS topics created by the SITL simulation can be viewed using 
+```bash 
+ros2 topic list
 ```
+Data from individual ToF sensors are published to the /depth/tof_n topics. However, the launch file also automatically starts up the tof_to_scan.py node, which automatically processes the depth data and returns a LaserScan topic, /scan_merged that can be used by ROS SLAM toolbox.
+
+Other data (e.g. odometry) from the PX4's Flight Management Unit (FMU) can also be subscribed to via their respective ROS topics. 
 
 ## Project Overview
 
