@@ -50,14 +50,43 @@ def generate_launch_description():
     set_ros_log_dir     = SetEnvironmentVariable(name='ROS_LOG_DIR',     value='/tmp/ros_logs')
     make_log_dir        = ExecuteProcess(cmd=['bash', '-lc', 'mkdir -p /tmp/ros_logs'], output='screen')
 
-    is_macos  = platform.system() == 'Darwin'
-    world_path = PathJoinSubstitution([pkg, 'worlds', f'{WORLD}.sdf'])
+    # Initialize variables to avoid linter warnings
+    gz_sim_server = None
+    gz_sim_gui = None
+    gz_sim = None
 
-    actions = []
     if is_macos:
         actions.append(ExecuteProcess(cmd=['gz', 'sim', '-s', '-r', world_path], output='screen'))
     else:
-        actions.append(ExecuteProcess(cmd=['gz', 'sim', '-r', world_path], output='screen'))
+        # On other platforms, use the combined -r flag
+        gz_sim = ExecuteProcess(
+            cmd=['gz', 'sim', '-r',
+                 PathJoinSubstitution([pkg_tof_slam_sim, 'worlds', 'playfield.sdf'])],
+            output='screen'
+        )
+    
+    # Test all sensors with TimerAction to confirm CycloneDDS fix
+    bridge_configs = []
+
+    # All 8 sensors = 16 bridges total (8 × 2 topics each)
+    sensor_names = ['front', 'front_right', 'right', 'back_right',
+                   'back', 'back_left', 'left', 'front_left']
+
+    for name in sensor_names:
+        # Bridge camera image
+        bridge_configs.append(Node(
+            package='ros_gz_bridge',
+            executable='parameter_bridge',
+            name=f'bridge_image_{name}',
+            parameters=[{
+                'config_file': '',
+                'gz_topic': f'/model/robot/model/tof_{name}/link/sensor/camera/image',
+                'ros_topic': f'/tof_{name}/image',
+                'gz_type': 'gz.msgs.Image',
+                'ros_type': 'sensor_msgs/msg/Image',
+                'lazy': True
+            }]
+        ))
 
     # ---- Bridge topics via YAML config ----
     bridge_config = PathJoinSubstitution([pkg, 'config', 'bridge.yaml'])
@@ -151,4 +180,21 @@ def generate_launch_description():
     ld.add_action(logger_proc)
     ld.add_action(rosbag_proc)
 
+    # Add Gazebo
+    if is_macos:
+        # Add both server and GUI processes
+        ld.add_action(gz_sim_server)
+        ld.add_action(gz_sim_gui)
+    else:
+        ld.add_action(gz_sim)
+    
+    # Add bridge nodes with TimerAction delays for robustness
+    for i, config in enumerate(bridge_configs):
+        # Start each bridge with a small delay to prevent potential domain conflicts
+        ld.add_action(TimerAction(period=i * 0.2, actions=[config]))
+
+    # Add command and odometry bridges
+    ld.add_action(cmd_vel_bridge)
+    ld.add_action(odom_bridge)
+    
     return ld
