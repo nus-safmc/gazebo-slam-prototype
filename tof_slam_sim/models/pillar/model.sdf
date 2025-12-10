@@ -5,20 +5,20 @@
     <link name="link">
       <!-- Base -->
       <collision name="base_collision">
-        <pose>0 0 0.075 0 0 0</pose>
+        <pose>0 0 0.1 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.25</radius>
-            <length>0.15</length>
+            <radius>0.3</radius>
+            <length>0.2</length>
           </cylinder>
         </geometry>
       </collision>
       <visual name="base_visual">
-        <pose>0 0 0.075 0 0 0</pose>
+        <pose>0 0 0.1 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.25</radius>
-            <length>0.15</length>
+            <radius>0.3</radius>
+            <length>0.2</length>
           </cylinder>
         </geometry>
         <material>
@@ -29,20 +29,20 @@
       
       <!-- Pillar -->
       <collision name="pillar_collision">
-        <pose>0 0 1.075 0 0 0</pose>
+        <pose>0 0 1.35 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.15</radius>
-            <length>1.85</length>
+            <radius>0.18</radius>
+            <length>2.3</length>
           </cylinder>
         </geometry>
       </collision>
       <visual name="pillar_visual">
-        <pose>0 0 1.075 0 0 0</pose>
+        <pose>0 0 1.35 0 0 0</pose>
         <geometry>
           <cylinder>
-            <radius>0.15</radius>
-            <length>1.85</length>
+            <radius>0.18</radius>
+            <length>2.3</length>
           </cylinder>
         </geometry>
         <material>

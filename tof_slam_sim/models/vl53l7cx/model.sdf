@@ -2,8 +2,7 @@
 <sdf version="1.9">
   <model name="vl53l7cx">
     <static>false</static>
-    
-    <!-- Small visual box for the sensor -->
+
     <link name="link">
       <pose>0 0 0 0 0 0</pose>
       <inertial>
@@ -17,44 +16,44 @@
           <iyz>0</iyz>
         </inertia>
       </inertial>
-      
-      <visual name="visual">
+
+      <gravity>false</gravity>
+      <visual name="body">
         <geometry>
           <box>
-            <size>0.004 0.004 0.002</size>
+            <size>0.015 0.015 0.005</size>
           </box>
         </geometry>
         <material>
-          <ambient>0.3 0.3 0.3 1</ambient>
-          <diffuse>0.7 0.7 0.7 1</diffuse>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
           <specular>0.1 0.1 0.1 1</specular>
         </material>
       </visual>
-      
+
+      <!-- ToF modeled as a tiny depth camera: ~60° HFOV, 45° VFOV, 3.5 m max -->
       <sensor name="depth_camera" type="depth">
         <always_on>1</always_on>
-        <update_rate>30</update_rate>
+        <update_rate>20</update_rate>
         <camera>
-          <horizontal_fov>1.047</horizontal_fov>  <!-- 60 degrees -->
-          <vertical_fov>0.785</vertical_fov>      <!-- 45 degrees -->
+          <!-- 60° HFOV. Height < width to approximate ~45° VFOV without the deprecated tag. -->
+          <horizontal_fov>1.047</horizontal_fov>
           <image>
             <width>8</width>
             <height>8</height>
-            <format>R8G8B8</format>
+            <format>R_FLOAT32</format>
           </image>
           <clip>
             <near>0.02</near>
-            <far>3.5</far>
+            <far>3.5</far>                        <!-- Match VL53L7CX max range -->
           </clip>
           <depth_camera>
             <output>depths</output>
           </depth_camera>
         </camera>
-        
-        <!-- Noise model can be added here later if needed -->
-        
-        <!-- Publish depth image to Gazebo topic -->
-        <topic>depth</topic>
+
+        <!-- Gazebo base topic; depth image will be published on <topic>/depth_image -->
+        <topic>depth_camera</topic>
       </sensor>
     </link>
   </model>

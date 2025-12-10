@@ -18,7 +18,7 @@ scripts = ["scripts/activate-cyclonedds.bat"]
 # Guard tasks - show helpful errors when you forget '-e jazzy'
 [tasks]
 build = { cmd = 'python -c "import sys; print(\"This task requires: pixi run -e jazzy build\"); sys.exit(2)"' }
-sim   = { cmd = 'python -c "import sys; print(\"This task requires: pixi run -e jazzy sim\"); sys.exit(2)"' }
+sim   = { cmd = "pixi run -e jazzy sim" }
 slam  = { cmd = 'python -c "import sys; print(\"This task requires: pixi run -e jazzy slam\"); sys.exit(2)"' }
 clean = { cmd = 'python -c "import sys; print(\"Use: pixi run -e jazzy clean\"); sys.exit(2)"' }
 rebuild = { cmd = 'python -c "import sys; print(\"Use: pixi run -e jazzy rebuild\"); sys.exit(2)"' }
@@ -81,6 +81,7 @@ ros-jazzy-sensor-msgs = ">=5.3.6,<6"
 ros-jazzy-geometry-msgs = ">=5.3.6,<6"
 ros-jazzy-std-msgs = ">=5.3.6,<6"
 ros-jazzy-nav-msgs = ">=5.3.6,<6"
+ros-jazzy-rclpy = ">=7.1.0,<8"
 colcon-common-extensions = ">=0.3.0,<0.4"
 cmake = ">=4.1.1,<5"
 pkg-config = ">=0.29.2,<0.30"
@@ -94,8 +95,10 @@ pcl = ">=1.15.0,<2"
 build   = "colcon build --merge-install --install-base $CONDA_PREFIX --cmake-args -DCMAKE_EXPORT_COMPILE_COMMANDS=ON"
 clean   = "rm -rf build log"
 rebuild = "pixi run -e jazzy clean && pixi run -e jazzy build"
-sim     = "ros2 launch tof_slam_sim sim_with_bridge.launch.py"
+sim     = "ros2 launch tof_slam_sim slam_test.launch.py"
 slam    = "ros2 launch tof_slam_sim slam_test.launch.py"
+bridge  = "ros2 run ros_gz_bridge parameter_bridge --ros-args -p config_file:=/home/rex/gazebo-slam-prototype/tof_slam_sim/config/bridge.yaml"
+launch_robot1 = "ros2 run teleop_twist_keyboard teleop_twist_keyboard --ros-args -r cmd_vel:=/robot1/cmd_vel"
 
 # Unix/macOS: faster iteration with symlinks
 [feature.jazzy.target.unix.tasks]

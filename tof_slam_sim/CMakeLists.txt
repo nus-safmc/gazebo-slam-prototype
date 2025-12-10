@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.8)
+cmake_minimum_required(VERSION 3.10)
 project(tof_slam_sim)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -25,7 +25,16 @@ install(PROGRAMS
   src/tof8x8_to_scan.py
   src/scan_merger.py
   src/test_controller.py
+  scripts/auto_pilot.py
+  scripts/depth_alias.py
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Provide a ROS-executable-friendly wrapper without the .py suffix so launch files
+# can reference `executable="auto_pilot"`.
+install(PROGRAMS scripts/auto_pilot.py
+  DESTINATION lib/${PROJECT_NAME}
+  RENAME auto_pilot
 )
 
 # Install launch files
@@ -39,6 +48,7 @@ install(DIRECTORY
   models
   worlds
   config
+  scripts
   DESTINATION share/${PROJECT_NAME}/
 )
 
