@@ -1,7 +1,7 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription, ExecuteProcess, SetEnvironmentVariable, TimerAction
-from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import PathJoinSubstitution
+from launch.actions import ExecuteProcess, SetEnvironmentVariable, DeclareLaunchArgument
+from launch.conditions import IfCondition
+from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 import platform
@@ -19,18 +19,13 @@ def generate_launch_description():
     # so the effective Gazebo topics are /model/robot/*.
     MODEL = 'robot'                 # instance name from your world include
     WORLD = 'playfield'             # world name used in /world/<WORLD>/... topics
-    DEPTH_STREAM = 'depth_image'    # Depth cameras publish floating ranges on the /depth_image stream.
     LOG_MONITOR_PATH = PathJoinSubstitution([pkg, 'scripts', 'log_monitor.py'])
     # =========================================
 
     # Common sensor names and helpers (used by both bridge + logger topic list)
     sensors = ['front','front_right','right','back_right','back','back_left','left','front_left']
-    def gz_depth(s):
-        # Depth sensors are nested models: /world/<WORLD>/model/<MODEL>/model/tof_<s>/...
-        return f'/world/{WORLD}/model/{MODEL}/model/tof_{s}/link/sensor/depth_camera/{DEPTH_STREAM}'
-
-    # Build the ROS topic names after remap for depth sensors
-    depth_ros_topics = [f'/tof_{s}/depth' for s in sensors]
+    def gz_scan(s):
+        return f'/scan/{s}'
 
     # ====== Logging / Bag arguments ======
     log_dir_arg  = DeclareLaunchArgument('log_dir',     default_value=os.path.expanduser('~/.ros/monitor_logs'))
@@ -61,17 +56,7 @@ def generate_launch_description():
     gz_sim = None
 
     if is_macos:
-        # On macOS, launch server and GUI separately
-        gz_sim_server = ExecuteProcess(
-            cmd=['gz', 'sim', '-s', '-r',
-                 PathJoinSubstitution([pkg_tof_slam_sim, 'worlds', 'playfield.sdf'])],
-            output='screen'
-        )
-
-        gz_sim_gui = ExecuteProcess(
-            cmd=['gz', 'sim', '-g'],
-            output='screen'
-        )
+        actions.append(ExecuteProcess(cmd=['gz', 'sim', '-s', '-r', world_path], output='screen'))
     else:
         # On other platforms, use the combined -r flag
         gz_sim = ExecuteProcess(
@@ -103,56 +88,14 @@ def generate_launch_description():
             }]
         ))
 
-        # Bridge camera info
-        bridge_configs.append(Node(
-            package='ros_gz_bridge',
-            executable='parameter_bridge',
-            name=f'bridge_info_{name}',
-            parameters=[{
-                'config_file': '',
-                'gz_topic': f'/model/robot/model/tof_{name}/link/sensor/camera/camera_info',
-                'ros_topic': f'/tof_{name}/camera_info',
-                'gz_type': 'gz.msgs.CameraInfo',
-                'ros_type': 'sensor_msgs/msg/CameraInfo',
-                'lazy': True
-            }]
-        ))
-    
-    # Bridge robot commands
-    cmd_vel_bridge = Node(
+    # ---- Bridge topics via YAML config ----
+    bridge_config = PathJoinSubstitution([pkg, 'config', 'bridge.yaml'])
+    bridge_node = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
-        name='bridge_cmd_odom',
-        arguments=[
-            '/cmd_vel@geometry_msgs/msg/Twist@gz.msgs.Twist',
-            '/odom@nav_msgs/msg/Odometry@gz.msgs.Odometry',
-            '/tf@tf2_msgs/msg/TFMessage@gz.msgs.Pose_V',
-            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
-        ],
+        name='bridge_all',
+        parameters=[{'config_file': bridge_config}],
         output='screen',
-    )
-
-    # ---- Bridge: 8x ToF depth images ----
-    depth_args = []
-    for s in sensors:
-        gz_topic = gz_depth(s)
-        depth_args.append(f'{gz_topic}@sensor_msgs/msg/Image@gz.msgs.Image')
-    depth_args += ['--ros-args']
-
-    bridge_all_depth = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='bridge_all_depth',
-        arguments=depth_args,
-        output='screen',
-    )
-
-    depth_alias = Node(
-        package='tof_slam_sim',
-        executable='depth_alias.py',
-        name='depth_alias',
-        output='screen',
-        parameters=[{'world': WORLD, 'model': MODEL, 'stream': DEPTH_STREAM}],
     )
 
     # ---- Autopilot: execute the bundled script so imports resolve consistently ----
@@ -168,16 +111,16 @@ def generate_launch_description():
         'AP_RATE':  os.environ.get('AP_RATE', '10.0'),
         'RCL_LOGGING_DIR': '/tmp/ros_logs',
         'ROS_LOG_DIR': '/tmp/ros_logs',
-        'RCUTILS_LOGGING_USE_STDOUT': '1'
+        'RCUTILS_LOGGING_USE_STDOUT': '1',
+        'RMW_IMPLEMENTATION': os.environ.get('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp'),
+        'PYTHONFAULTHANDLER': os.environ.get('PYTHONFAULTHANDLER', '1'),
     }
-    auto_pilot = ExecuteProcess(
-        cmd=[
-            sys.executable,
-            '-u',
-            PathJoinSubstitution([pkg, 'scripts', 'auto_pilot.py']),
-        ],
+    auto_pilot = Node(
+        package='tof_slam_sim',
+        executable='auto_pilot',
+        name='auto_pilot',
+        output='log',
         env=autopilot_env,
-        output='screen',
     )
 
     # ===== Logger: run scripts/log_monitor.py with your topics =====
@@ -196,8 +139,8 @@ def generate_launch_description():
         '--topics', '/tf:tf2_msgs/msg/TFMessage',
         '--topics', '/tf_static:tf2_msgs/msg/TFMessage',
     ]
-    for t in depth_ros_topics:
-        logger_cmd += ['--topics', f'{t}:sensor_msgs/msg/Image']
+    for t in [f'/scan/{s}' for s in sensors]:
+        logger_cmd += ['--topics', f'{t}:sensor_msgs/msg/LaserScan']
 
     logger_proc = ExecuteProcess(
         cmd=logger_cmd,
@@ -205,7 +148,7 @@ def generate_launch_description():
     )
 
     # ===== Optional rosbag2 recording of the same topics =====
-    bag_topics = ['/cmd_vel', '/odom', '/tf', '/tf_static'] + depth_ros_topics
+    bag_topics = ['/cmd_vel', '/odom', '/tf', '/tf_static'] + [f'/scan/{s}' for s in sensors]
     rosbag_proc = ExecuteProcess(
         cmd=['ros2', 'bag', 'record', '-o', LaunchConfiguration('bag_out')] + bag_topics,
         condition=IfCondition(LaunchConfiguration('record_bag')),
@@ -230,9 +173,7 @@ def generate_launch_description():
     # sim + bridges + autopilot
     for a in actions:
         ld.add_action(a)
-    ld.add_action(bridge_cmd_odom)
-    ld.add_action(bridge_all_depth)
-    ld.add_action(depth_alias)
+    ld.add_action(bridge_node)
     ld.add_action(auto_pilot)
 
     # logger + rosbag

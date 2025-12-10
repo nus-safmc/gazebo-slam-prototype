@@ -3,7 +3,7 @@
   <model name="vl53l7cx">
     <static>false</static>
 
-    <link name="link">
+    <link name="sensor">
       <pose>0 0 0 0 0 0</pose>
       <inertial>
         <mass>0.001</mass>
@@ -39,13 +39,13 @@
           <!-- 60° HFOV. Height < width to approximate ~45° VFOV without the deprecated tag. -->
           <horizontal_fov>1.047</horizontal_fov>
           <image>
-            <width>8</width>
-            <height>8</height>
+            <width>1</width>
+            <height>1</height>
             <format>R_FLOAT32</format>
           </image>
           <clip>
             <near>0.02</near>
-            <far>3.5</far>                        <!-- Match VL53L7CX max range -->
+            <far>15</far>                        <!-- Match VL53L7CX max range -->
           </clip>
           <depth_camera>
             <output>depths</output>

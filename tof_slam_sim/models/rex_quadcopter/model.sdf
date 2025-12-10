@@ -1,11 +1,12 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
-  <model name="tof_slam_quadcopter">
+  <model name="rex_quadcopter">
     <static>false</static>
 
     <!-- Main body link -->
     <link name="base_link">
       <pose>0 0 0.15 0 0 0</pose>
+
       <inertial>
         <mass>0.3</mass>
         <inertia>
@@ -17,9 +18,11 @@
           <iyz>0</iyz>
         </inertia>
       </inertial>
-      <gravity>false</gravity> <!-- remove later when you add rotors -->
 
-            <!-- Simple collision box (keep) -->
+      <!-- Disable gravity on the link (re-enable when you add rotors) -->
+      <gravity>false</gravity>
+
+      <!-- Simple collision box -->
       <collision name="body_collision">
         <geometry>
           <box>
@@ -30,10 +33,9 @@
 
       <!-- ===================== FRAME (dual plates) ===================== -->
       <visual name="frame_top">
-        <pose>0 0 0.020 0 0 0</pose>  <!-- upper plate -->
+        <pose>0 0 0.020 0 0 0</pose>
         <geometry><box><size>0.18 0.18 0.004</size></box></geometry>
         <material>
-          <!-- warm bronze like your frame -->
           <ambient>0.65 0.55 0.45 1</ambient>
           <diffuse>0.75 0.60 0.50 1</diffuse>
           <specular>0.2 0.2 0.2 1</specular>
@@ -41,7 +43,7 @@
       </visual>
 
       <visual name="frame_bottom">
-        <pose>0 0 -0.020 0 0 0</pose> <!-- lower plate -->
+        <pose>0 0 -0.020 0 0 0</pose>
         <geometry><box><size>0.18 0.18 0.004</size></box></geometry>
         <material>
           <ambient>0.65 0.55 0.45 1</ambient>
@@ -51,7 +53,6 @@
       </visual>
 
       <!-- ===================== GOLD STANDOFFS ===================== -->
-      <!-- corners -->
       <visual name="standoff_fr">
         <pose> 0.07  0.07 0 0 0 0</pose>
         <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
@@ -70,120 +71,257 @@
       <visual name="standoff_bl">
         <pose>-0.07 -0.07 0 0 0 0</pose>
         <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
-      </visual>
-      <!-- mid standoffs (front/back) -->
-      <visual name="standoff_mid_f">
-        <pose> 0.000  0.050 0 0 0 0</pose>
-        <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
-      </visual>
-      <visual name="standoff_mid_b">
-        <pose> 0.000 -0.050 0 0 0 0</pose>
-        <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
       </visual>
 
       <!-- ===================== THIN GOLD LEGS / PINS ===================== -->
       <visual name="leg_fr">
         <pose> 0.055  0.055 -0.040 0 0 0</pose>
         <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
       </visual>
       <visual name="leg_fl">
         <pose>-0.055  0.055 -0.040 0 0 0</pose>
         <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
       </visual>
       <visual name="leg_br">
         <pose> 0.055 -0.055 -0.040 0 0 0</pose>
         <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
       </visual>
       <visual name="leg_bl">
         <pose>-0.055 -0.055 -0.040 0 0 0</pose>
         <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
       </visual>
 
       <!-- ===================== MOTOR CANS ===================== -->
       <visual name="motor_fr">
         <pose> 0.095  0.095 0.012 0 0 0</pose>
         <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-        <material><ambient>0.25 0.25 0.25 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse><specular>0.8 0.8 0.8 1</specular></material>
       </visual>
       <visual name="motor_fl">
         <pose>-0.095  0.095 0.012 0 0 0</pose>
         <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-        <material><ambient>0.25 0.25 0.25 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse><specular>0.8 0.8 0.8 1</specular></material>
       </visual>
       <visual name="motor_br">
         <pose> 0.095 -0.095 0.012 0 0 0</pose>
         <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-        <material><ambient>0.25 0.25 0.25 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse><specular>0.8 0.8 0.8 1</specular></material>
       </visual>
       <visual name="motor_bl">
         <pose>-0.095 -0.095 0.012 0 0 0</pose>
         <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-        <material><ambient>0.25 0.25 0.25 1</ambient><diffuse>0.35 0.35 0.35 1</diffuse><specular>0.8 0.8 0.8 1</specular></material>
       </visual>
 
       <!-- ===================== DARK PROPS ABOVE MOTORS ===================== -->
       <visual name="prop_fr">
         <pose> 0.095  0.095 0.022 0 0 0</pose>
         <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
-        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse></material>
       </visual>
       <visual name="prop_fl">
         <pose>-0.095  0.095 0.022 0 0 0</pose>
         <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
-        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse></material>
       </visual>
       <visual name="prop_br">
         <pose> 0.095 -0.095 0.022 0 0 0</pose>
         <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
-        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse></material>
       </visual>
       <visual name="prop_bl">
         <pose>-0.095 -0.095 0.022 0 0 0</pose>
         <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
-        <material><ambient>0.05 0.05 0.05 1</ambient><diffuse>0.10 0.10 0.10 1</diffuse></material>
       </visual>
 
       <!-- ===================== BLUE STATUS LED ===================== -->
       <visual name="status_led">
         <pose>0 0 -0.018 0 0 0</pose>
         <geometry><sphere><radius>0.006</radius></sphere></geometry>
-        <material>
-          <emissive>0.0 0.2 1.0 1</emissive>
-          <diffuse>0.0 0.35 1.0 1</diffuse>
-          <specular>0.4 0.4 0.9 1</specular>
-        </material>
       </visual>
+
+      <!-- ===================== 8 RAY-BASED RANGE SENSORS ===================== -->
+      <!-- Simple laser beams publishing LaserScan messages for debugging. -->
+      <sensor name="tof_front" type="gpu_lidar">
+        <pose>0.12 0 0 0 0 0</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_front/scan</topic>
+      </sensor>
+
+      <sensor name="tof_front_right" type="gpu_lidar">
+        <pose>0.085 0.085 0 0 0 0.7853981634</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_front_right/scan</topic>
+      </sensor>
+
+      <sensor name="tof_right" type="gpu_lidar">
+        <pose>0 0.12 0 0 0 1.5707963268</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_right/scan</topic>
+      </sensor>
+
+      <sensor name="tof_back_right" type="gpu_lidar">
+        <pose>-0.085 0.085 0 0 0 2.3561944902</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_back_right/scan</topic>
+      </sensor>
+
+      <sensor name="tof_back" type="gpu_lidar">
+        <pose>-0.12 0 0 0 0 3.1415926536</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_back/scan</topic>
+      </sensor>
+
+      <sensor name="tof_back_left" type="gpu_lidar">
+        <pose>-0.085 -0.085 0 0 0 -2.3561944902</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_back_left/scan</topic>
+      </sensor>
+
+      <sensor name="tof_left" type="gpu_lidar">
+        <pose>0 -0.12 0 0 0 -1.5707963268</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_left/scan</topic>
+      </sensor>
+
+      <sensor name="tof_front_left" type="gpu_lidar">
+        <pose>0.085 -0.085 0 0 0 -0.7853981634</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>5</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>20</update_rate>
+        <visualize>true</visualize>
+        <topic>/world/playfield/model/robot/link/base_link/sensor/tof_front_left/scan</topic>
+      </sensor>
 
     </link>
 
-    <!-- 8 ToF sensors -->
-    <include><uri>model://vl53l7cx</uri><name>tof_front</name><pose relative_to="base_link">0.075 0 -0.02 0 0 0</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_front_right</name><pose relative_to="base_link">0.053 0.053 -0.02 0 0 0.785</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_right</name><pose relative_to="base_link">0 0.075 -0.02 0 0 1.571</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_back_right</name><pose relative_to="base_link">-0.053 0.053 -0.02 0 0 2.356</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_back</name><pose relative_to="base_link">-0.075 0 -0.02 0 0 3.142</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_back_left</name><pose relative_to="base_link">-0.053 -0.053 -0.02 0 0 -2.356</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_left</name><pose relative_to="base_link">0 -0.075 -0.02 0 0 -1.571</pose></include>
-    <include><uri>model://vl53l7cx</uri><name>tof_front_left</name><pose relative_to="base_link">0.053 -0.053 -0.02 0 0 -0.785</pose></include>
-
-    <!-- Fixed joints -->
-    <joint name="tof_front_joint" type="fixed"><parent>base_link</parent><child>tof_front::link</child></joint>
-    <joint name="tof_front_right_joint" type="fixed"><parent>base_link</parent><child>tof_front_right::link</child></joint>
-    <joint name="tof_right_joint" type="fixed"><parent>base_link</parent><child>tof_right::link</child></joint>
-    <joint name="tof_back_right_joint" type="fixed"><parent>base_link</parent><child>tof_back_right::link</child></joint>
-    <joint name="tof_back_joint" type="fixed"><parent>base_link</parent><child>tof_back::link</child></joint>
-    <joint name="tof_back_left_joint" type="fixed"><parent>base_link</parent><child>tof_back_left::link</child></joint>
-    <joint name="tof_left_joint" type="fixed"><parent>base_link</parent><child>tof_left::link</child></joint>
-    <joint name="tof_front_left_joint" type="fixed"><parent>base_link</parent><child>tof_front_left::link</child></joint>
-
-    <!-- VelocityControl: subscribes to a global /cmd_vel -->
+    <!-- Velocity control and odometry plugins -->
     <plugin name="gz::sim::systems::VelocityControl" filename="gz-sim-velocity-control-system">
       <topic>/cmd_vel</topic>
       <use_world_frame>false</use_world_frame>
@@ -191,11 +329,10 @@
       <max_angular_velocity>2</max_angular_velocity>
     </plugin>
 
-    <!-- OdometryPublisher: publishes global /odom -->
     <plugin name="gz::sim::systems::OdometryPublisher" filename="gz-sim-odometry-publisher-system">
       <topic>/odom</topic>
-      <frame_id>odom</frame_id>
-      <child_frame_id>base_link</child_frame_id>
+      <frame_id>robot/odom</frame_id>
+      <child_frame_id>robot/base_link</child_frame_id>
       <publish_tf>true</publish_tf>
     </plugin>
 

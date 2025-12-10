@@ -1,0 +1,8 @@
+#!@Python3_EXECUTABLE@
+# -*- coding: utf-8 -*-
+from @PYTHON_ENTRYPOINT_MODULE@ import @PYTHON_ENTRYPOINT_FUNCTION@  # type: ignore
+
+
+if __name__ == "__main__":
+    @PYTHON_ENTRYPOINT_FUNCTION@()
+

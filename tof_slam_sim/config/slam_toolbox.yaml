@@ -1,40 +1,55 @@
+# tof_slam_sim/config/slam_toolbox.yaml
 slam_toolbox:
   ros__parameters:
-    # Robot frame setup
-    odom_frame: odom
-    map_frame: map
-    base_frame: base_link
+    # Core I/O
+    autostart: true
+    mode: mapping
+    use_sim_time: true
+
+    # Frames
+    odom_frame: robot/odom
+    map_frame: robot/map
+    base_frame: robot/base_link
+
+    # Explicitly bind to your merged scan topic
     scan_topic: /scan_merged
-    
-    # SLAM parameters
-    mode: mapping  # Options: mapping, localization, offline
-    map_update_interval: 1.0
+
+    # (Your existing tuning kept as-is; tweak later)
     transform_timeout: 0.2
-    resolution: 0.05  # Map resolution in meters/pixel
-    max_laser_range: 3.5  # Match VL53L7CX max range
+    transform_publish_period: 0.05
+    map_update_interval: 1.0
+
+    resolution: 0.05
+    min_laser_range: 0.02
+    max_laser_range: 3.5
     minimum_time_interval: 0.1
-    
-    # Loop closure parameters
-    loop_search_space_dimension: 8.0
-    loop_match_minimum_chain_size: 3
-    loop_match_maximum_variance_covariance: 3.0
-    minimum_travel_distance: 0.5
-    minimum_travel_heading: 0.5
+    smear_deviation: 0.2
+
+    minimum_travel_distance: 0.10
+    minimum_travel_heading: 0.10
     scan_buffer_size: 10
     scan_buffer_maximum_scan_distance: 10.0
-    link_match_minimum_response_fine: 0.8
+    link_match_minimum_response_fine: 0.6
     link_scan_maximum_distance: 1.5
+
+    do_loop_closing: true
     loop_search_maximum_distance: 3.0
-    
-    # Optimization parameters
+    loop_search_space_dimension: 8.0
+    loop_search_space_resolution: 0.10
+    correlation_search_space_smear_deviation: 0.1
+    loop_search_space_smear_deviation: 0.1
+    loop_match_minimum_chain_size: 3
+    loop_match_maximum_variance_coarse: 3.0
+    loop_match_minimum_response_coarse: 0.5
+    loop_match_minimum_response_fine: 0.6
+
     solver_plugin: solver_plugins::CeresSolver
     ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
     ceres_preconditioner: SCHUR_JACOBI
     ceres_trust_strategy: LEVENBERG_MARQUARDT
     ceres_dogleg_type: TRADITIONAL_DOGLEG
     ceres_loss_function: HuberLoss
-    
-    # Debug
+
     debug_logging: false
     throttle_scans: 1
-    publish_frame_graphs: false
+    enable_interactive_mode: false
