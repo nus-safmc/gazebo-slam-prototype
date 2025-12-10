@@ -15,6 +15,11 @@ class ToF8x8ToScan(Node):
     def __init__(self):
         super().__init__('tof8x8_to_scan')
         
+        self.base_frame = self.declare_parameter(
+            'base_frame',
+            'robot/base_footprint'
+        ).value
+
         # QoS profile for depth data
         depth_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -60,8 +65,9 @@ class ToF8x8ToScan(Node):
     def depth_callback(self, msg: Image, sensor_name: str) -> None:
         """Convert depth image to LaserScan."""
         try:
-            # Convert depth image to numpy array
-            depth_image = self.cv_bridge.imgmsg_to_cv2(msg)
+            # Convert depth image to numpy array. Prefer parsing raw buffers so we
+            # consistently interpret distances in meters across transports.
+            depth_image = self._to_depth_array(msg)
             
             # Get sensor index
             sensor_idx = self.sensor_names.index(sensor_name)
@@ -72,23 +78,32 @@ class ToF8x8ToScan(Node):
             # Collapse vertical columns to single range value
             # We take the minimum valid range from each column
             ranges = []
-            for col in range(8):
+            columns = min(depth_image.shape[1], 8)
+            for col in range(columns):
                 col_depths = depth_image[:, col]
-                valid_depths = col_depths[
-                    (col_depths >= self.range_min) & 
+                valid_mask = (
+                    np.isfinite(col_depths) &
+                    (col_depths >= self.range_min) &
                     (col_depths <= self.range_max)
-                ]
+                )
+                valid_depths = col_depths[valid_mask]
                 if len(valid_depths) > 0:
                     ranges.append(float(np.min(valid_depths)))
                 else:
                     ranges.append(float('inf'))
-            
+            while len(ranges) < 8:
+                ranges.append(float('inf'))
+
             # Create LaserScan message
             scan_msg = LaserScan()
             scan_msg.header = msg.header
+            scan_msg.header.frame_id = self.base_frame
             scan_msg.angle_min = -self.h_fov / 2.0
             scan_msg.angle_max = self.h_fov / 2.0
-            scan_msg.angle_increment = self.h_fov / 8.0
+            if len(ranges) > 1:
+                scan_msg.angle_increment = self.h_fov / (len(ranges) - 1)
+            else:
+                scan_msg.angle_increment = self.h_fov
             scan_msg.time_increment = 0.0
             scan_msg.scan_time = 1.0 / 30.0  # 30 Hz update rate
             scan_msg.range_min = self.range_min
@@ -100,6 +115,26 @@ class ToF8x8ToScan(Node):
             
         except Exception as e:
             self.get_logger().error(f'Error processing depth image: {str(e)}')
+
+    def _to_depth_array(self, msg: Image) -> np.ndarray:
+        """Decode ROS Image into a float32 depth array in meters."""
+        try:
+            float_encodings = {
+                '32FC1', '32FC', '32F', 'FLOAT32', 'float32',
+                'R32F', 'R_FLOAT32'
+            }
+            if msg.encoding in float_encodings:
+                return np.frombuffer(msg.data, dtype=np.float32).reshape(msg.height, msg.width)
+            if msg.encoding == '64FC1':
+                return np.frombuffer(msg.data, dtype=np.float64).reshape(msg.height, msg.width).astype(np.float32)
+
+            cv_img = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+            if cv_img.ndim == 3:
+                cv_img = cv_img[:, :, 0]
+            return cv_img.astype(np.float32)
+        except Exception as exc:  # pragma: no cover - defensive guard
+            self.get_logger().error(f'Failed to decode depth image ({msg.encoding}): {exc}')
+            return np.full((msg.height or 1, msg.width or 1), float('inf'), dtype=np.float32)
 
 def main(args=None):
     rclpy.init(args=args)

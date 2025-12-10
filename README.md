@@ -52,11 +52,59 @@ Other data (e.g. odometry) from the PX4's Flight Management Unit (FMU) can also 
 ### Possible issue on non-Linux systems
 The px4_sitl.launch.py launches processes in multiple gnome terminals. You may need to edit these lines to launch your respective terminal application if necessary. 
 
-### Custom Gazebo models
-Custom gazebo models can be found under gazebo-slam-prototype/PX4-Autopilot/Tools/simulation/gz/models. 
-Models being used are: 
-- ToF-Ring
-- gz_x500_small_tof
+### System Initialization Sequence
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant PIXI
+    participant RoboStack
+    participant Launch
+    participant Gazebo
+    participant ROS_Bridge
+    participant ROS_Nodes
+
+    User->>PIXI: pixi run -e jazzy sim
+    PIXI->>RoboStack: Activate ROS 2 Jazzy environment
+    RoboStack->>RoboStack: Configure CycloneDDS, RMW_IMPLEMENTATION
+    RoboStack->>Launch: Execute sim_with_bridge.launch.py
+
+    Launch->>Launch: Set GZ_SIM_RESOURCE_PATH
+    Launch->>Launch: Detect platform (macOS vs Linux)
+    Launch->>Gazebo: Start Gazebo server (+ GUI on macOS)
+
+    Gazebo->>Gazebo: Load playfield.sdf world
+    Gazebo->>Gazebo: Spawn quadcopter model with 8 sensors
+    Gazebo->>Gazebo: Initialize physics simulation
+
+    Launch->>ROS_Bridge: Start parameter_bridge nodes with TimerAction
+    Note over ROS_Bridge: 16 bridges (8 sensors × 2 topics)<br/>staggered at 0.2s intervals
+
+    ROS_Bridge->>ROS_Bridge: Bridge cmd_vel and odometry topics (immediate)
+    ROS_Bridge->>ROS_Bridge: Monitor for sensor topics (lazy activation)
+
+    Gazebo->>ROS_Bridge: Publish sensor topics once active
+    Note over Gazebo,ROS_Bridge: Gazebo publishes:<br/>/model/robot/model/tof_*/link/sensor/camera/*
+
+    ROS_Bridge->>ROS_Bridge: Activate lazy bridges for sensor topics
+    ROS_Bridge->>ROS_Bridge: Publish ROS sensor topics
+    Note over ROS_Bridge: ROS topics:<br/>/tof_*/image, /tof_*/camera_info
+
+    Launch->>ROS_Nodes: Start custom Python nodes
+    ROS_Nodes->>ROS_Nodes: Initialize tof8x8_to_scan (8 instances)
+    ROS_Nodes->>ROS_Nodes: Initialize scan_merger
+    ROS_Nodes->>ROS_Nodes: Initialize test_controller
+
+    ROS_Nodes->>ROS_Bridge: Subscribe to ROS sensor topics
+    ROS_Bridge->>ROS_Nodes: Forward Gazebo sensor data as ROS messages
+    ROS_Nodes->>ROS_Bridge: Publish LaserScan topics
+    ROS_Nodes->>ROS_Bridge: Publish merged scan topic
+
+    User->>ROS_Nodes: Send velocity commands (optional)
+    ROS_Nodes->>ROS_Bridge: Forward commands to Gazebo
+```
+
+### Package Structure
 
 
 ## Development
