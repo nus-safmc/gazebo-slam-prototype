@@ -15,6 +15,13 @@ endif()
 # Install the Python package (the folder "tof_slam_sim" with __init__.py)
 ament_python_install_package(${PROJECT_NAME})
 
+# Install Python executables
+install(PROGRAMS
+  src/tof8x8_to_scan.py
+  src/scan_merger.py
+  src/test_controller.py
+  src/tof_to_scan.py
+  DESTINATION lib/${PROJECT_NAME}
 # Register this package in the ament index
 install(FILES
   resource/${PROJECT_NAME}

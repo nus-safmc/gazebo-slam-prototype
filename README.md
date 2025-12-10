@@ -1,6 +1,6 @@
 # Gazebo SLAM Prototype
 
-This project provides a simulation environment for validating 2D SLAM using an array of 8 simulated VL53L7CX ToF sensors in Gazebo Harmonic with ROS 2.
+Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in the Loop (SITL)
 
 ## Quick Start
 
@@ -13,9 +13,11 @@ This project provides a simulation environment for validating 2D SLAM using an a
 
 1. **Clone the repository:**
    ```bash
-   git clone <repository-url>
+   git clone --recursive https://github.com/nus-safmc/gazebo-slam-prototype.git
    cd gazebo-slam-prototype
    ```
+
+   Make sure to include the --recursive flag to clone all submodules
 
 2. **Install dependencies and build:**
    ```bash
@@ -33,49 +35,22 @@ This project provides a simulation environment for validating 2D SLAM using an a
 
 Once in the pixi shell, you can:
 
-1. **Launch the simulation with ROS bridge:**
+**Launch the PX4 SITL environment:**
    ```bash
-   ros2 launch tof_slam_sim sim_with_bridge.launch.py
+   pixi run -e jazzy px4_sitl
    ```
 
-2. **Launch SLAM for testing:**
-   ```bash
-   ros2 launch tof_slam_sim slam_test.launch.py
-   ```
-
-Or use the convenience commands:
-```bash
-# Launch simulation
-pixi run -e jazzy sim
-
-# Launch SLAM test
-pixi run -e jazzy slam
-
-# Clean and rebuild
-pixi run -e jazzy rebuild
+**Viewing ROS topics**
+The list of ROS topics created by the SITL simulation can be viewed using 
+```bash 
+ros2 topic list
 ```
+Data from individual ToF sensors are published to the /depth/tof_n topics. However, the launch file also automatically starts up the tof_to_scan.py node, which automatically processes the depth data and returns a LaserScan topic, /scan_merged that can be used by ROS SLAM toolbox.
 
-## Project Overview
+Other data (e.g. odometry) from the PX4's Flight Management Unit (FMU) can also be subscribed to via their respective ROS topics. 
 
-This project uses [RoboStack](https://robostack.github.io/) - a conda-based ROS distribution that integrates seamlessly with pixi for reproducible ROS 2 development environments.
-
-### Key Features
-
-- **8× VL53L7CX ToF sensor simulation** using depth cameras
-- **15 cm × 15 cm quadcopter model** with sensor array
-- **20 m × 20 m competition playfield** with obstacles
-- **ROS 2 bridge** for sensor data integration
-- **Depth to LaserScan conversion** and 360° scan merging
-- **SLAM validation** using slam_toolbox
-
-### Architecture
-
-The simulation stack includes:
-- **Gazebo Harmonic** for physics simulation
-- **ROS 2 Jazzy** for robotics middleware
-- **ros_gz_bridge** for ROS-Gazebo communication
-- **slam_toolbox** for mapping and localization
-- **Custom Python nodes** for sensor processing
+### Possible issue on non-Linux systems
+The px4_sitl.launch.py launches processes in multiple gnome terminals. You may need to edit these lines to launch your respective terminal application if necessary. 
 
 ### System Initialization Sequence
 
@@ -131,22 +106,10 @@ sequenceDiagram
 
 ### Package Structure
 
-```
-tof_slam_sim/
-├── models/           # Gazebo model definitions
-│   ├── vl53l7cx/     # ToF sensor model
-│   ├── quadcopter/   # Drone with 8 sensors
-│   ├── walls/        # Environment obstacles
-├── worlds/           # Gazebo world definitions
-├── launch/           # ROS 2 launch files
-├── src/              # Python nodes
-│   ├── tof8x8_to_scan.py    # Depth → LaserScan
-│   ├── scan_merger.py       # 360° scan merging
-│   └── test_controller.py   # Robot controller
-└── config/           # Configuration files
-```
 
 ## Development
+
+This project uses [RoboStack](https://robostack.github.io/) - a conda-based ROS distribution that integrates seamlessly with pixi for reproducible ROS 2 development environments.
 
 ### Environment Management
 

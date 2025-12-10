@@ -1,4 +1,7 @@
 from launch import LaunchDescription
+from launch.actions import IncludeLaunchDescription, ExecuteProcess, SetEnvironmentVariable, TimerAction
+from launch.launch_description_sources import PythonLaunchDescriptionSource
+from launch.substitutions import PathJoinSubstitution
 from launch.actions import ExecuteProcess, SetEnvironmentVariable, DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import PathJoinSubstitution, LaunchConfiguration
@@ -56,7 +59,17 @@ def generate_launch_description():
     gz_sim = None
 
     if is_macos:
-        actions.append(ExecuteProcess(cmd=['gz', 'sim', '-s', '-r', world_path], output='screen'))
+        # On macOS, launch server and GUI separately
+        gz_sim_server = ExecuteProcess(
+            cmd=['gz', 'sim', '-s', '-r',
+                 PathJoinSubstitution([pkg_tof_slam_sim, 'worlds', 'playfield.sdf'])],
+            output='screen'
+        )
+
+        gz_sim_gui = ExecuteProcess(
+            cmd=['gz', 'sim', '-g'],
+            output='screen'
+        )
     else:
         # On other platforms, use the combined -r flag
         gz_sim = ExecuteProcess(
@@ -88,9 +101,23 @@ def generate_launch_description():
             }]
         ))
 
-    # ---- Bridge topics via YAML config ----
-    bridge_config = PathJoinSubstitution([pkg, 'config', 'bridge.yaml'])
-    bridge_node = Node(
+        # Bridge camera info
+        bridge_configs.append(Node(
+            package='ros_gz_bridge',
+            executable='parameter_bridge',
+            name=f'bridge_info_{name}',
+            parameters=[{
+                'config_file': '',
+                'gz_topic': f'/model/robot/model/tof_{name}/link/sensor/camera/camera_info',
+                'ros_topic': f'/tof_{name}/camera_info',
+                'gz_type': 'gz.msgs.CameraInfo',
+                'ros_type': 'sensor_msgs/msg/CameraInfo',
+                'lazy': True
+            }]
+        ))
+    
+    # Bridge robot commands
+    cmd_vel_bridge = Node(
         package='ros_gz_bridge',
         executable='parameter_bridge',
         name='bridge_all',
