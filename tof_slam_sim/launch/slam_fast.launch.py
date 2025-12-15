@@ -2,7 +2,6 @@ from launch import LaunchDescription
 from launch.actions import (
     IncludeLaunchDescription,
     DeclareLaunchArgument,
-    SetEnvironmentVariable,
     EmitEvent,
     RegisterEventHandler,
     TimerAction,
@@ -26,11 +25,6 @@ def generate_launch_description():
         default_value='true',
         description='Use simulation time',
     )
-
-    set_home = SetEnvironmentVariable('HOME', '/home/rex')
-    set_ros_log_dir = SetEnvironmentVariable('ROS_LOG_DIR', '/home/rex/.ros/log')
-    set_stdout = SetEnvironmentVariable('RCUTILS_LOGGING_USE_STDOUT', '1')
-    set_rmw_impl = SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
 
     sim_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -59,7 +53,7 @@ def generate_launch_description():
     )
 
     slam_toolbox_params = PathJoinSubstitution(
-        [pkg_tof_slam_sim, 'config', 'slam_toolbox.yaml']
+        [pkg_tof_slam_sim, 'config', 'slam_toolbox_fast.yaml']
     )
 
     slam_params_override = {
@@ -158,10 +152,6 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
-    ld.add_action(set_home)
-    ld.add_action(set_ros_log_dir)
-    ld.add_action(set_stdout)
-    ld.add_action(set_rmw_impl)
     ld.add_action(sim_launch)
     ld.add_action(monitor_launch)
     ld.add_action(scan_merger)

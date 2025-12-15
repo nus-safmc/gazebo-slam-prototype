@@ -169,6 +169,12 @@ pixi run -e jazzy build
    export LIBGL_ALWAYS_SOFTWARE=1
    ```
 
+4. **`TF_OLD_DATA` / "Detected jump back in time"**: You have multiple `/clock` publishers (usually from a stale `gz sim` / `parameter_bridge` process).
+   ```bash
+   pixi run -e jazzy cleanup_sim
+   pixi run -e jazzy -- ros2 topic info /clock   # should show Publisher count: 1
+   ```
+
 ### Getting Help
 
 - Check the [RoboStack documentation](https://robostack.github.io/)

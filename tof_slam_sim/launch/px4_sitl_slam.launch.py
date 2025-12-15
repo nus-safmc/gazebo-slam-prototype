@@ -2,7 +2,6 @@ from launch import LaunchDescription
 from launch.actions import (
     IncludeLaunchDescription,
     DeclareLaunchArgument,
-    SetEnvironmentVariable,
     EmitEvent,
     RegisterEventHandler,
     TimerAction,
@@ -27,34 +26,21 @@ def generate_launch_description():
         description='Use simulation time',
     )
 
-    set_home = SetEnvironmentVariable('HOME', '/home/rex')
-    set_ros_log_dir = SetEnvironmentVariable('ROS_LOG_DIR', '/home/rex/.ros/log')
-    set_stdout = SetEnvironmentVariable('RCUTILS_LOGGING_USE_STDOUT', '1')
-    set_rmw_impl = SetEnvironmentVariable('RMW_IMPLEMENTATION', 'rmw_cyclonedds_cpp')
-
-    sim_launch = IncludeLaunchDescription(
+    px4_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
-            PathJoinSubstitution([pkg_tof_slam_sim, 'launch', 'sim_with_bridge.launch.py'])
+            PathJoinSubstitution([pkg_tof_slam_sim, 'launch', 'px4_sitl.launch.py'])
         ]),
         launch_arguments={'use_sim_time': use_sim_time}.items(),
     )
 
-    monitor_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([pkg_tof_slam_sim, 'launch', 'topic_monitor.launch.py'])
-        ]),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
-    )
-
-    scan_merger = Node(
+    pose_to_tf = Node(
         package='tof_slam_sim',
-        executable='scan_merger',
-        name='scan_merger',
+        executable='pose_to_tf.py',
+        name='pose_to_tf',
         parameters=[{
             'use_sim_time': use_sim_time,
-            'output_frame': 'robot/base_footprint',
-            'output_topic': '/scan_merged',
-            'publish_hz': 10.0,
+            'parent_frame': 'robot/odom',
+            'child_frame': 'robot/base_link',
         }],
     )
 
@@ -66,7 +52,7 @@ def generate_launch_description():
         'scan_topic': '/scan_merged',
         'odom_frame': 'robot/odom',
         'map_frame': 'robot/map',
-        'base_frame': 'robot/base_footprint',
+        'base_frame': 'robot/base_link',
     }
 
     slam_toolbox = LifecycleNode(
@@ -135,19 +121,6 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}],
     )
 
-    alias_robot_base_link_to_plain = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='alias_robot_base_link_to_plain',
-        arguments=[
-            '--frame-id', 'robot/base_link',
-            '--child-frame-id', 'base_link',
-            '--x', '0', '--y', '0', '--z', '0',
-            '--roll', '0', '--pitch', '0', '--yaw', '0',
-        ],
-        parameters=[{'use_sim_time': use_sim_time}],
-    )
-
     rviz = Node(
         package='rviz2',
         executable='rviz2',
@@ -158,18 +131,12 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
-    ld.add_action(set_home)
-    ld.add_action(set_ros_log_dir)
-    ld.add_action(set_stdout)
-    ld.add_action(set_rmw_impl)
-    ld.add_action(sim_launch)
-    ld.add_action(monitor_launch)
-    ld.add_action(scan_merger)
+    ld.add_action(px4_launch)
+    ld.add_action(pose_to_tf)
     ld.add_action(slam_toolbox)
     ld.add_action(slam_configure)
     ld.add_action(slam_activate)
     ld.add_action(map_tf_fallback)
     ld.add_action(static_basefoot_to_baselink)
-    ld.add_action(alias_robot_base_link_to_plain)
     ld.add_action(rviz)
     return ld

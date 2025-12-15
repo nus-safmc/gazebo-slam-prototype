@@ -1,8 +1,16 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
 
 def generate_launch_description():
+    use_sim_time = LaunchConfiguration('use_sim_time')
+    declare_use_sim_time = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='true',
+        description='Use simulation time',
+    )
     sensors = ['front', 'front_right', 'right', 'back_right', 'back', 'back_left', 'left', 'front_left']
     topics = [
         '/cmd_vel:geometry_msgs/msg/Twist:reliable',
@@ -19,6 +27,7 @@ def generate_launch_description():
         name='topic_monitor',
         output='screen',
         parameters=[{
+            'use_sim_time': use_sim_time,
             'topics': topics,
             'report_period_sec': 5.0,
             'stale_seconds': 5.0,
@@ -26,5 +35,6 @@ def generate_launch_description():
     )
 
     ld = LaunchDescription()
+    ld.add_action(declare_use_sim_time)
     ld.add_action(monitor_node)
     return ld

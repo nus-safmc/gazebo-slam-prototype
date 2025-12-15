@@ -21,7 +21,9 @@ install(PROGRAMS
   src/scan_merger.py
   src/test_controller.py
   src/tof_to_scan.py
+  src/pose_to_tf.py
   DESTINATION lib/${PROJECT_NAME}
+)
 # Register this package in the ament index
 install(FILES
   resource/${PROJECT_NAME}
@@ -35,6 +37,7 @@ install(FILES package.xml DESTINATION share/${PROJECT_NAME})
 install(DIRECTORY
   launch
   config
+  scripts
   models
   worlds
   DESTINATION share/${PROJECT_NAME}
@@ -46,6 +49,7 @@ set(_python_nodes
   "tof_slam_sim.scan_merger:main:scan_merger"
   "tof_slam_sim.auto_pilot_node:main:auto_pilot"
   "tof_slam_sim.map_tf_fallback:main:map_tf_fallback"
+  "tof_slam_sim.nav2_frontier_explorer:main:nav2_frontier_explorer"
   "tof_slam_sim.topic_monitor:main:topic_monitor"
 )
 

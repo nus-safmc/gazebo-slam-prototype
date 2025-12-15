@@ -8,6 +8,7 @@ import os
 import random
 from typing import Callable, Optional
 from collections import deque
+from heapq import nlargest
 
 import rclpy
 from rclpy.node import Node
@@ -57,6 +58,8 @@ class AutoPilot(Node):
 
         # State shared by both modes
         self.mode = os.environ.get('AP_MODE', 'pattern').lower()
+        self.map_frame = os.environ.get('AP_MAP_FRAME', 'robot/map')
+        self.odom_frame = os.environ.get('AP_ODOM_FRAME', 'robot/odom')
         self._pattern: Optional[Callable[[float], tuple[float, float, float]]] = None
         self._start_time = self.get_clock().now()
         self._pose_x = 0.0
@@ -116,6 +119,16 @@ class AutoPilot(Node):
             self._free_thresh = int(os.environ.get('AP_EXP_FREE_THRESH', '30'))
             self._range_factor = float(os.environ.get('AP_EXP_RANGE_FACTOR', '0.95'))
             self._last_map_target: Optional[tuple[float, float]] = None
+            self._goal_history: deque[tuple[float, float]] = deque(maxlen=25)
+            self._goal_min_sep = float(os.environ.get('AP_EXP_GOAL_MIN_SEP', '1.5'))
+            self._goal_repeat_penalty = float(os.environ.get('AP_EXP_REPEAT_PENALTY', '8.0'))
+            self._frontier_gain_w = float(os.environ.get('AP_EXP_GAIN_W', '1.0'))
+            self._frontier_cost_w = float(os.environ.get('AP_EXP_COST_W', '0.35'))
+            self._inflation_radius_m = float(os.environ.get('AP_EXP_INFLATE_M', '0.25'))
+            self._path_step_m = float(os.environ.get('AP_EXP_PATH_STEP_M', '0.35'))
+            self._lookahead_m = float(os.environ.get('AP_EXP_LOOKAHEAD_M', '1.0'))
+            self._waypoint_reached_m = float(os.environ.get('AP_EXP_WP_REACHED_M', '0.4'))
+            self._planner = os.environ.get('AP_EXP_PLANNER', 'frontier').lower()
 
             map_topic = os.environ.get('AP_MAP_TOPIC', '/map')
             map_qos = QoSProfile(
@@ -128,6 +141,7 @@ class AutoPilot(Node):
 
             self.get_logger().info(
                 f'Exploration mode active (scan={scan_topic}, map={map_topic}) '
+                f'frames=({self.map_frame}->{self.odom_frame}) '
                 f'forward={self.explore_forward:.2f} turn={self.explore_turn:.2f}'
             )
         else:
@@ -176,20 +190,32 @@ class AutoPilot(Node):
         return max(-self.max_vert_speed, min(self.max_vert_speed, cmd))
 
     def _tick(self) -> None:
-        elapsed = (self.get_clock().now() - self._start_time).nanoseconds * 1e-9
-        if self.mode == 'explore':
-            lin_x, lin_y, ang_z = self._explore_command(elapsed)
-        else:
-            lin_x, lin_y, ang_z = self._pattern(elapsed) if self._pattern else (
-                self.msg.linear.x,
-                self.msg.linear.y,
-                self.msg.angular.z,
-            )
-        self.msg.linear.x = lin_x
-        self.msg.linear.y = lin_y
-        self.msg.angular.z = ang_z
-        self.msg.linear.z = self._altitude_command()
-        self.pub.publish(self.msg)
+        try:
+            elapsed = (self.get_clock().now() - self._start_time).nanoseconds * 1e-9
+            if self.mode == 'explore':
+                lin_x, lin_y, ang_z = self._explore_command(elapsed)
+            else:
+                lin_x, lin_y, ang_z = self._pattern(elapsed) if self._pattern else (
+                    self.msg.linear.x,
+                    self.msg.linear.y,
+                    self.msg.angular.z,
+                )
+            self.msg.linear.x = lin_x
+            self.msg.linear.y = lin_y
+            self.msg.angular.z = ang_z
+            self.msg.linear.z = self._altitude_command()
+            self.pub.publish(self.msg)
+        except Exception as exc:
+            self.get_logger().error(f'AutoPilot tick failed: {exc}')
+            self._publish_stop()
+
+    def _publish_stop(self) -> None:
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.linear.y = 0.0
+        msg.linear.z = 0.0
+        msg.angular.z = 0.0
+        self.pub.publish(msg)
 
     # ------------------------------------------------------------------
     # Pattern mode
@@ -292,26 +318,94 @@ class AutoPilot(Node):
                 yaw_cmd = self._explore_bias_yaw
                 lin_y = self.explore_strafe * math.sin(now)
 
+        lin_x, lin_y, yaw_cmd = self._apply_scan_constraints(
+            scan,
+            lin_x,
+            lin_y,
+            yaw_cmd,
+            front_min=front_min,
+            left_min=left_min,
+            right_min=right_min,
+        )
+        return lin_x, lin_y, yaw_cmd
+
+    def _apply_scan_constraints(
+        self,
+        scan: LaserScan,
+        lin_x: float,
+        lin_y: float,
+        yaw_cmd: float,
+        *,
+        front_min: float,
+        left_min: float,
+        right_min: float,
+    ) -> tuple[float, float, float]:
+        speed = math.hypot(lin_x, lin_y)
+        if speed <= 1e-3:
+            return lin_x, lin_y, yaw_cmd
+
+        heading_deg = math.degrees(math.atan2(lin_y, lin_x))
+        travel_min = self._sector_min(scan, center_deg=heading_deg, width_deg=60.0)
+
+        # Scale safety distances with speed (time-to-collision heuristic).
+        ttc_stop = float(os.environ.get('AP_EXP_TTC_STOP', '0.8'))
+        ttc_slow = float(os.environ.get('AP_EXP_TTC_SLOW', '1.6'))
+        avoid = max(self.explore_avoid_distance, speed * max(0.0, ttc_stop))
+        clear = max(self.explore_clear_distance, speed * max(ttc_stop, ttc_slow))
+        if clear <= avoid:
+            clear = avoid + 0.05
+
+        # If we're about to collide in the direction we're moving, back up (if possible)
+        # and rotate toward the more open side.
+        if travel_min <= avoid:
+            reverse_deg = ((heading_deg + 180.0) % 360.0) - 180.0
+            reverse_min = self._sector_min(scan, center_deg=reverse_deg, width_deg=60.0)
+            if reverse_min > avoid:
+                unit_x = lin_x / speed
+                unit_y = lin_y / speed
+                back_speed = min(0.18, max(0.08, 0.4 * speed))
+                lin_x = -back_speed * unit_x
+                lin_y = -back_speed * unit_y
+            else:
+                lin_x = 0.0
+                lin_y = 0.0
+
+            yaw_mag = abs(self.explore_turn) if self.explore_turn != 0.0 else 0.6
+            yaw_cmd = yaw_mag if left_min >= right_min else -yaw_mag
+            return lin_x, lin_y, yaw_cmd
+
+        # Smoothly scale speed down as we approach obstacles in the travel direction.
+        if travel_min < clear:
+            scale = (travel_min - avoid) / (clear - avoid)
+            scale = max(0.0, min(1.0, scale))
+            lin_x *= scale
+            lin_y *= scale
+
+        # Prevent strafing into walls.
+        if lin_y > 0.0 and left_min <= avoid:
+            lin_y = 0.0
+        elif lin_y < 0.0 and right_min <= avoid:
+            lin_y = 0.0
+
+        # Prevent driving forward into walls.
+        if lin_x > 0.0 and front_min <= avoid:
+            lin_x = 0.0
+
         return lin_x, lin_y, yaw_cmd
 
     @staticmethod
     def _sector_min(scan: LaserScan, center_deg: float, width_deg: float) -> float:
+        best = float('inf')
         angle_center = math.radians(center_deg)
         half_width = math.radians(width_deg) / 2.0
-        start = angle_center - half_width
-        end = angle_center + half_width
-
-        idx_start = max(0, int((start - scan.angle_min) / scan.angle_increment))
-        idx_end = min(len(scan.ranges) - 1, int((end - scan.angle_min) / scan.angle_increment))
-        if idx_end < idx_start:
-            idx_start, idx_end = idx_end, idx_start
-
-        best = float('inf')
-        for i in range(idx_start, idx_end + 1):
-            r = scan.ranges[i]
-            if math.isfinite(r) and r > scan.range_min:
-                if r < best:
-                    best = r
+        angle_min = float(scan.angle_min)
+        inc = float(scan.angle_increment) if scan.angle_increment != 0.0 else 1e-6
+        for i, r in enumerate(scan.ranges):
+            if not math.isfinite(r) or r <= scan.range_min:
+                continue
+            angle = angle_min + i * inc
+            if abs(_wrap_angle(angle - angle_center)) <= half_width and r < best:
+                best = r
         if not math.isfinite(best):
             best = scan.range_max if math.isfinite(scan.range_max) else 10.0
         return best
@@ -331,14 +425,34 @@ class AutoPilot(Node):
         while self._current_path:
             tx, ty = self._current_path[0]
             dist = math.hypot(tx - self._pose_x, ty - self._pose_y)
-            if dist <= 0.4:
+            if dist <= self._waypoint_reached_m:
                 self._current_path.pop(0)
                 continue
+            break
+
+        if not self._current_path:
+            return None
+
+        # Pure pursuit style lookahead target (in odom frame)
+        lookahead = max(0.0, self._lookahead_m)
+        if lookahead <= self._waypoint_reached_m:
+            tx, ty = self._current_path[0]
             return tx - self._pose_x, ty - self._pose_y
 
-        return None
+        for tx, ty in self._current_path:
+            dist = math.hypot(tx - self._pose_x, ty - self._pose_y)
+            if dist >= lookahead:
+                return tx - self._pose_x, ty - self._pose_y
+
+        tx, ty = self._current_path[-1]
+        return tx - self._pose_x, ty - self._pose_y
 
     def _plan_path_to_frontier(self) -> Optional[list[tuple[float, float]]]:
+        if self._planner == 'legacy':
+            return self._plan_path_to_frontier_legacy()
+        return self._plan_path_to_frontier_frontier()
+
+    def _plan_path_to_frontier_legacy(self) -> Optional[list[tuple[float, float]]]:
         if self._map is None or not self._have_pose:
             return None
 
@@ -352,7 +466,7 @@ class AutoPilot(Node):
         stride = self._map_stride
 
         # Determine robot position in map frame
-        map_from_odom = self._transform_components('map', 'odom')
+        map_from_odom = self._transform_components(self.map_frame, self.odom_frame)
         if map_from_odom is None:
             return None
         map_tx, map_ty, map_yaw = map_from_odom
@@ -423,10 +537,9 @@ class AutoPilot(Node):
 
         if best_parent is None or best_frontier_world is None:
             self._last_map_target = None
-            self._last_map_target = None
             return None
 
-        odom_from_map = self._transform_components('odom', 'map')
+        odom_from_map = self._transform_components(self.odom_frame, self.map_frame)
         if odom_from_map is None:
             return None
         odom_tx, odom_ty, odom_yaw = odom_from_map
@@ -457,6 +570,245 @@ class AutoPilot(Node):
             waypoints.append((x_odom, y_odom))
 
         return waypoints if waypoints else None
+
+    def _plan_path_to_frontier_frontier(self) -> Optional[list[tuple[float, float]]]:
+        if self._map is None or not self._have_pose:
+            return None
+
+        info = self._map.info
+        width = int(info.width)
+        height = int(info.height)
+        if width <= 2 or height <= 2:
+            return None
+
+        res = float(info.resolution) if info.resolution > 0 else 0.0
+        if res <= 0.0:
+            return None
+
+        data = self._map.data
+        size = width * height
+        if len(data) < size:
+            return None
+
+        origin = info.origin
+        origin_x = float(origin.position.x)
+        origin_y = float(origin.position.y)
+        oq = origin.orientation
+        siny_cosp = 2.0 * (oq.w * oq.z + oq.x * oq.y)
+        cosy_cosp = 1.0 - 2.0 * (oq.y * oq.y + oq.z * oq.z)
+        origin_yaw = math.atan2(siny_cosp, cosy_cosp)
+        cos_o = math.cos(origin_yaw)
+        sin_o = math.sin(origin_yaw)
+
+        map_from_odom = self._transform_components(self.map_frame, self.odom_frame)
+        if map_from_odom is None:
+            return None
+        map_tx, map_ty, map_yaw = map_from_odom
+        robot_map_x, robot_map_y = self._apply_transform(map_tx, map_ty, map_yaw, self._pose_x, self._pose_y)
+
+        dx0 = robot_map_x - origin_x
+        dy0 = robot_map_y - origin_y
+        local_x = cos_o * dx0 + sin_o * dy0
+        local_y = -sin_o * dx0 + cos_o * dy0
+        start_ix = int(local_x / res)
+        start_iy = int(local_y / res)
+        if start_ix < 0 or start_ix >= width or start_iy < 0 or start_iy >= height:
+            return None
+
+        start_idx = start_iy * width + start_ix
+
+        traversable = bytearray(size)
+        unknown = bytearray(size)
+        occupied = bytearray(size)
+        free_thresh = int(self._free_thresh)
+        for i in range(size):
+            v = int(data[i])
+            if v == -1:
+                unknown[i] = 1
+            elif v <= free_thresh:
+                traversable[i] = 1
+            else:
+                occupied[i] = 1
+
+        # Inflate occupied cells to avoid hugging walls.
+        inflation_cells = int(math.ceil(max(0.0, self._inflation_radius_m) / res))
+        if inflation_cells > 0:
+            r2 = inflation_cells * inflation_cells
+            for iy in range(height):
+                row = iy * width
+                for ix in range(width):
+                    idx = row + ix
+                    if not occupied[idx]:
+                        continue
+                    for dy in range(-inflation_cells, inflation_cells + 1):
+                        ny = iy + dy
+                        if ny < 0 or ny >= height:
+                            continue
+                        dy2 = dy * dy
+                        nrow = ny * width
+                        for dx in range(-inflation_cells, inflation_cells + 1):
+                            if dy2 + dx * dx > r2:
+                                continue
+                            nx = ix + dx
+                            if nx < 0 or nx >= width:
+                                continue
+                            traversable[nrow + nx] = 0
+
+        if not traversable[start_idx]:
+            return None
+
+        # BFS on traversable cells to compute distances + parents.
+        dist = [-1] * size
+        parent = [-1] * size
+        q: deque[int] = deque([start_idx])
+        dist[start_idx] = 0
+
+        frontier = bytearray(size)
+        frontier_indices: list[int] = []
+        neighbors4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+        while q:
+            idx = q.popleft()
+            ix = idx - (idx // width) * width
+            iy = idx // width
+
+            # Mark frontiers: reachable free cell adjacent to unknown.
+            if not frontier[idx]:
+                for dx, dy in neighbors4:
+                    nx = ix + dx
+                    ny = iy + dy
+                    if nx < 0 or nx >= width or ny < 0 or ny >= height:
+                        continue
+                    nidx = ny * width + nx
+                    if unknown[nidx]:
+                        frontier[idx] = 1
+                        frontier_indices.append(idx)
+                        break
+
+            next_cost = dist[idx] + 1
+            for dx, dy in neighbors4:
+                nx = ix + dx
+                ny = iy + dy
+                if nx < 0 or nx >= width or ny < 0 or ny >= height:
+                    continue
+                nidx = ny * width + nx
+                if traversable[nidx] and dist[nidx] < 0:
+                    dist[nidx] = next_cost
+                    parent[nidx] = idx
+                    q.append(nidx)
+
+        if not frontier_indices:
+            return None
+
+        # Cluster frontier cells (8-connected).
+        frontier_visited = bytearray(size)
+        neighbors8 = (
+            (1, 0), (-1, 0), (0, 1), (0, -1),
+            (1, 1), (1, -1), (-1, 1), (-1, -1),
+        )
+        clusters: list[list[int]] = []
+        for idx in frontier_indices:
+            if frontier_visited[idx]:
+                continue
+            cluster: list[int] = []
+            cq: deque[int] = deque([idx])
+            frontier_visited[idx] = 1
+            while cq:
+                cur = cq.popleft()
+                cluster.append(cur)
+                cx = cur - (cur // width) * width
+                cy = cur // width
+                for dx, dy in neighbors8:
+                    nx = cx + dx
+                    ny = cy + dy
+                    if nx < 0 or nx >= width or ny < 0 or ny >= height:
+                        continue
+                    nidx = ny * width + nx
+                    if frontier[nidx] and not frontier_visited[nidx]:
+                        frontier_visited[nidx] = 1
+                        cq.append(nidx)
+            clusters.append(cluster)
+
+        if not clusters:
+            return None
+
+        def cell_to_map_xy(cell_idx: int) -> tuple[float, float]:
+            cx = cell_idx - (cell_idx // width) * width
+            cy = cell_idx // width
+            lx = (cx + 0.5) * res
+            ly = (cy + 0.5) * res
+            wx = origin_x + cos_o * lx - sin_o * ly
+            wy = origin_y + sin_o * lx + cos_o * ly
+            return wx, wy
+
+        # Score clusters (information gain vs travel cost).
+        scored: list[tuple[float, int]] = []
+        rep_gain: dict[int, int] = {}
+        for cluster in clusters:
+            rep = min(cluster, key=lambda i: dist[i] if dist[i] >= 0 else 10**9)
+            if dist[rep] < 0:
+                continue
+            gain = float(len(cluster))
+            rep_gain[rep] = int(gain)
+            cost_m = dist[rep] * res
+            score = self._frontier_gain_w * gain - self._frontier_cost_w * cost_m
+
+            rep_world = cell_to_map_xy(rep)
+            if self._goal_history:
+                min_sep = min(
+                    math.hypot(rep_world[0] - gx, rep_world[1] - gy)
+                    for gx, gy in self._goal_history
+                )
+                if min_sep < self._goal_min_sep:
+                    score -= self._goal_repeat_penalty
+
+            scored.append((score, rep))
+
+        if not scored:
+            return None
+
+        # Try best few candidates; skip those with broken parents (shouldn't happen).
+        candidates = [rep for _, rep in nlargest(10, scored, key=lambda t: t[0])]
+
+        odom_from_map = self._transform_components(self.odom_frame, self.map_frame)
+        if odom_from_map is None:
+            return None
+        odom_tx, odom_ty, odom_yaw = odom_from_map
+
+        step_cells = max(1, int(math.ceil(max(0.05, self._path_step_m) / res)))
+
+        for rep in candidates:
+            path_cells: list[int] = []
+            cur = rep
+            while cur != start_idx and cur != -1:
+                path_cells.append(cur)
+                cur = parent[cur]
+            if cur == -1:
+                continue
+            path_cells.reverse()
+            if not path_cells:
+                continue
+
+            sampled = path_cells[::step_cells]
+            if sampled[-1] != path_cells[-1]:
+                sampled.append(path_cells[-1])
+
+            waypoints: list[tuple[float, float]] = []
+            for cell in sampled:
+                wx, wy = cell_to_map_xy(cell)
+                x_odom, y_odom = self._apply_transform(odom_tx, odom_ty, odom_yaw, wx, wy)
+                waypoints.append((x_odom, y_odom))
+
+            rep_world = cell_to_map_xy(rep)
+            self._goal_history.append(rep_world)
+            self._last_map_target = rep_world
+            self.get_logger().info(
+                f'Frontier goal: ({rep_world[0]:.2f}, {rep_world[1]:.2f}) '
+                f'cost={dist[rep] * res:.1f}m gain={rep_gain.get(rep, 0)}'
+            )
+            return waypoints
+
+        return None
 
     def _transform_components(self, target: str, source: str) -> Optional[tuple[float, float, float]]:
         try:
