@@ -16,7 +16,8 @@ from launch_ros.substitutions import FindPackageShare
 def generate_launch_description() -> LaunchDescription:
     pkg_share = FindPackageShare('tof_slam_sim')
     use_sim_time = LaunchConfiguration('use_sim_time')
-    world_path = PathJoinSubstitution([pkg_share, 'worlds', 'playfield.sdf'])
+    world = LaunchConfiguration('world')
+    world_path = PathJoinSubstitution([pkg_share, 'worlds', world])
     bridge_config = PathJoinSubstitution([pkg_share, 'config', 'bridge.yaml'])
     log_monitor_path = PathJoinSubstitution([pkg_share, 'scripts', 'log_monitor.py'])
 
@@ -65,6 +66,11 @@ def generate_launch_description() -> LaunchDescription:
         'use_sim_time',
         default_value='true',
         description='Use simulation time (Gazebo /clock).',
+    )
+    world_arg = DeclareLaunchArgument(
+        'world',
+        default_value='playfield_sparse.sdf',
+        description='World file (SDF) under tof_slam_sim/worlds.',
     )
 
     set_gz_resource_path = SetEnvironmentVariable(
@@ -184,6 +190,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(bag_out_arg)
     ld.add_action(run_autopilot_arg)
     ld.add_action(use_sim_time_arg)
+    ld.add_action(world_arg)
 
     ld.add_action(set_gz_resource_path)
     ld.add_action(set_rcl_logging_dir)

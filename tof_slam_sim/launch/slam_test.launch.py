@@ -21,10 +21,16 @@ def generate_launch_description():
     pkg_tof_slam_sim = FindPackageShare('tof_slam_sim')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
+    world = LaunchConfiguration('world')
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time',
         default_value='true',
         description='Use simulation time',
+    )
+    declare_world = DeclareLaunchArgument(
+        'world',
+        default_value='playfield_sparse.sdf',
+        description='World file (SDF) under tof_slam_sim/worlds.',
     )
 
     set_home = SetEnvironmentVariable('HOME', '/home/rex')
@@ -36,7 +42,10 @@ def generate_launch_description():
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([pkg_tof_slam_sim, 'launch', 'sim_with_bridge.launch.py'])
         ]),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'world': world,
+        }.items(),
     )
 
     monitor_launch = IncludeLaunchDescription(
@@ -158,6 +167,7 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
+    ld.add_action(declare_world)
     ld.add_action(set_home)
     ld.add_action(set_ros_log_dir)
     ld.add_action(set_stdout)

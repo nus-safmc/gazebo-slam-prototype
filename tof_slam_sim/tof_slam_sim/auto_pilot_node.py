@@ -631,6 +631,7 @@ class AutoPilot(Node):
                 occupied[i] = 1
 
         # Inflate occupied cells to avoid hugging walls.
+        inflated_obstacle = bytearray(occupied)
         inflation_cells = int(math.ceil(max(0.0, self._inflation_radius_m) / res))
         if inflation_cells > 0:
             r2 = inflation_cells * inflation_cells
@@ -652,10 +653,39 @@ class AutoPilot(Node):
                             nx = ix + dx
                             if nx < 0 or nx >= width:
                                 continue
+                            inflated_obstacle[nrow + nx] = 1
                             traversable[nrow + nx] = 0
 
         if not traversable[start_idx]:
             return None
+
+        neighbors4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+        # Clearance transform: distance (cells) to nearest inflated obstacle.
+        clearance_cells = [-1] * size
+        cq: deque[int] = deque()
+        for i in range(size):
+            if inflated_obstacle[i]:
+                clearance_cells[i] = 0
+                cq.append(i)
+        if cq:
+            while cq:
+                idx = cq.popleft()
+                base = clearance_cells[idx]
+                if base < 0:
+                    continue
+                ix = idx - (idx // width) * width
+                iy = idx // width
+                next_cost = base + 1
+                for dx, dy in neighbors4:
+                    nx = ix + dx
+                    ny = iy + dy
+                    if nx < 0 or nx >= width or ny < 0 or ny >= height:
+                        continue
+                    nidx = ny * width + nx
+                    if clearance_cells[nidx] < 0:
+                        clearance_cells[nidx] = next_cost
+                        cq.append(nidx)
 
         # BFS on traversable cells to compute distances + parents.
         dist = [-1] * size
@@ -665,7 +695,6 @@ class AutoPilot(Node):
 
         frontier = bytearray(size)
         frontier_indices: list[int] = []
-        neighbors4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
 
         while q:
             idx = q.popleft()
@@ -744,6 +773,9 @@ class AutoPilot(Node):
         # Score clusters (information gain vs travel cost).
         scored: list[tuple[float, int]] = []
         rep_gain: dict[int, int] = {}
+        clearance_w = float(os.environ.get('AP_EXP_CLEARANCE_W', '6.0'))
+        clearance_min_m = float(os.environ.get('AP_EXP_CLEARANCE_MIN', '0.6'))
+        clearance_penalty_w = float(os.environ.get('AP_EXP_CLEARANCE_PENALTY', '12.0'))
         for cluster in clusters:
             rep = min(cluster, key=lambda i: dist[i] if dist[i] >= 0 else 10**9)
             if dist[rep] < 0:
@@ -752,6 +784,16 @@ class AutoPilot(Node):
             rep_gain[rep] = int(gain)
             cost_m = dist[rep] * res
             score = self._frontier_gain_w * gain - self._frontier_cost_w * cost_m
+
+            # Prefer frontiers with more clearance (wide areas before narrow corridors).
+            if clearance_cells[rep] >= 0:
+                cluster_clear_cells = max(
+                    clearance_cells[i] for i in cluster if clearance_cells[i] >= 0
+                )
+                cluster_clear_m = cluster_clear_cells * res
+                score += clearance_w * cluster_clear_m
+                if cluster_clear_m < clearance_min_m:
+                    score -= clearance_penalty_w * (clearance_min_m - cluster_clear_m)
 
             rep_world = cell_to_map_xy(rep)
             if self._goal_history:

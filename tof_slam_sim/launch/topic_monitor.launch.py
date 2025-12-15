@@ -13,6 +13,7 @@ def generate_launch_description():
     )
     sensors = ['front', 'front_right', 'right', 'back_right', 'back', 'back_left', 'left', 'front_left']
     topics = [
+        '/clock:rosgraph_msgs/msg/Clock:best_effort',
         '/cmd_vel:geometry_msgs/msg/Twist:reliable',
         '/odom:nav_msgs/msg/Odometry:reliable',
         '/tf:tf2_msgs/msg/TFMessage:reliable',

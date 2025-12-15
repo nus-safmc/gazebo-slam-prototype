@@ -17,7 +17,16 @@ from rclpy.qos import (
     ReliabilityPolicy,
     QoSPolicyKind,
 )
-from rclpy.qos_event import QoSRequestedIncompatibleQoSInfo, SubscriptionEventCallbacks
+try:
+    from rclpy.event_handler import (
+        QoSRequestedIncompatibleQoSInfo,
+        SubscriptionEventCallbacks,
+    )
+except ImportError:  # pragma: no cover
+    from rclpy.qos_event import (  # type: ignore[no-redef]
+        QoSRequestedIncompatibleQoSInfo,
+        SubscriptionEventCallbacks,
+    )
 from rclpy.time import Time
 from rosidl_runtime_py.utilities import get_message
 from tf2_ros import Buffer, TransformListener, TransformException

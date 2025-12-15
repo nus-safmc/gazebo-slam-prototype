@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import argparse, json, os, signal, sys, time, logging
-from datetime import datetime
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 
 import rclpy
@@ -43,7 +43,7 @@ class GenericLogMonitor(Node):
                 def _cb(msg):
                     record = {
                         "stamp": self.get_clock().now().to_msg().sec + self.get_clock().now().to_msg().nanosec * 1e-9,
-                        "iso_time": datetime.utcnow().isoformat() + 'Z',
+                        "iso_time": datetime.now(timezone.utc).isoformat(),
                         "topic": topic_name,
                         "data": message_to_ordereddict(msg)
                     }
@@ -83,7 +83,7 @@ def main():
     ap.add_argument('--queue-depth', type=int, default=50)
     args = ap.parse_args()
 
-    ts = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+    ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
     log_path = os.path.join(args.log_dir, f'{args.log_name}_{ts}.jsonl')
 
     rclpy.init()

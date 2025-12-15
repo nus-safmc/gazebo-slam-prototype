@@ -16,6 +16,7 @@ def generate_launch_description():
     nav2_share = FindPackageShare('nav2_bringup')
 
     use_sim_time = LaunchConfiguration('use_sim_time')
+    world = LaunchConfiguration('world')
     params_file = LaunchConfiguration('nav2_params')
     use_rviz = LaunchConfiguration('rviz')
 
@@ -23,6 +24,11 @@ def generate_launch_description():
         'use_sim_time',
         default_value='true',
         description='Use simulation time',
+    )
+    declare_world = DeclareLaunchArgument(
+        'world',
+        default_value='playfield_sparse.sdf',
+        description='World file (SDF) under tof_slam_sim/worlds.',
     )
     declare_nav2_params = DeclareLaunchArgument(
         'nav2_params',
@@ -42,6 +48,7 @@ def generate_launch_description():
         launch_arguments={
             'run_autopilot': 'false',
             'use_sim_time': use_sim_time,
+            'world': world,
         }.items(),
     )
 
@@ -168,6 +175,7 @@ def generate_launch_description():
 
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
+    ld.add_action(declare_world)
     ld.add_action(declare_nav2_params)
     ld.add_action(declare_rviz)
     ld.add_action(sim_launch)

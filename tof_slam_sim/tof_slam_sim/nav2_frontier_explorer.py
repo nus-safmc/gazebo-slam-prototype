@@ -86,6 +86,9 @@ class Nav2FrontierExplorer(Node):
         self.repeat_penalty = float(self.declare_parameter('repeat_penalty', 50.0).value)
         self.gain_weight = float(self.declare_parameter('gain_weight', 1.0).value)
         self.cost_weight = float(self.declare_parameter('cost_weight', 0.35).value)
+        self.clearance_weight = float(self.declare_parameter('clearance_weight', 6.0).value)
+        self.clearance_min_m = float(self.declare_parameter('clearance_min_m', 0.6).value)
+        self.clearance_penalty = float(self.declare_parameter('clearance_penalty', 12.0).value)
 
         map_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -176,12 +179,15 @@ class Nav2FrontierExplorer(Node):
 
         unknown = bytearray(size)
         free = bytearray(size)
+        obstacle = bytearray(size)
         for i in range(size):
             v = int(data[i])
             if v == -1:
                 unknown[i] = 1
             elif v <= self.free_thresh:
                 free[i] = 1
+            elif v >= self.occupied_thresh:
+                obstacle[i] = 1
 
         neighbors4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
         neighbors8 = (
@@ -234,6 +240,32 @@ class Nav2FrontierExplorer(Node):
 
         if not clusters:
             return None
+
+        # Clearance transform: distance (cells) to nearest obstacle. (Unknown doesn't count.)
+        clearance_cells = [-1] * size
+        cq: deque[int] = deque()
+        for i in range(size):
+            if obstacle[i]:
+                clearance_cells[i] = 0
+                cq.append(i)
+        if cq:
+            while cq:
+                idx = cq.popleft()
+                base = clearance_cells[idx]
+                if base < 0:
+                    continue
+                ix = idx - (idx // meta.width) * meta.width
+                iy = idx // meta.width
+                next_cost = base + 1
+                for dx, dy in neighbors4:
+                    nx = ix + dx
+                    ny = iy + dy
+                    if nx <= 0 or nx >= meta.width - 1 or ny <= 0 or ny >= meta.height - 1:
+                        continue
+                    nidx = ny * meta.width + nx
+                    if clearance_cells[nidx] < 0:
+                        clearance_cells[nidx] = next_cost
+                        cq.append(nidx)
 
         robot_x, robot_y = robot_xy
         best_score = -1e12
@@ -310,6 +342,11 @@ class Nav2FrontierExplorer(Node):
             gain = float(len(cluster))
 
             score = self.gain_weight * gain - self.cost_weight * dist
+            if clearance_cells[goal_idx] >= 0:
+                clearance_m = clearance_cells[goal_idx] * meta.res
+                score += self.clearance_weight * clearance_m
+                if clearance_m < self.clearance_min_m:
+                    score -= self.clearance_penalty * (self.clearance_min_m - clearance_m)
             if self._goal_history:
                 min_sep = min(
                     math.hypot(goal_x - gx, goal_y - gy) for gx, gy in self._goal_history
