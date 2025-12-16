@@ -67,6 +67,23 @@ def generate_launch_description():
         }],
     )
 
+    odom_tf = Node(
+        package='tof_slam_sim',
+        executable='odom_tf_publisher',
+        name='odom_tf_publisher',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'odom_topic': '/odom',
+            'parent_frame': 'robot/odom',
+            'child_frame': 'robot/base_footprint',
+            'yaw_only': True,
+            'use_message_z': False,
+            'z_override': 0.0,
+            'smoothing_alpha': 1.0,
+        }],
+    )
+
     slam_toolbox_params = PathJoinSubstitution(
         [pkg_tof_slam_sim, 'config', 'slam_toolbox.yaml']
     )
@@ -175,6 +192,7 @@ def generate_launch_description():
     ld.add_action(sim_launch)
     ld.add_action(monitor_launch)
     ld.add_action(scan_merger)
+    ld.add_action(odom_tf)
     ld.add_action(slam_toolbox)
     ld.add_action(slam_configure)
     ld.add_action(slam_activate)

@@ -31,7 +31,7 @@
         </material>
       </visual>
 
-      <!-- ToF modeled as a tiny depth camera: ~60° HFOV, 45° VFOV, 3.5 m max -->
+      <!-- ToF modeled as a shallow depth camera: 1×8 (single row) for lightweight 2D mapping -->
       <sensor name="depth_camera" type="depth">
         <always_on>1</always_on>
         <update_rate>20</update_rate>
@@ -39,7 +39,7 @@
           <!-- 60° HFOV. Height < width to approximate ~45° VFOV without the deprecated tag. -->
           <horizontal_fov>1.047</horizontal_fov>
           <image>
-            <width>1</width>
+            <width>8</width>
             <height>1</height>
             <format>R_FLOAT32</format>
           </image>

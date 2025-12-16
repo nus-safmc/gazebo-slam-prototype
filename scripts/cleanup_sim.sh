@@ -32,7 +32,18 @@ pkill -f '(^|/)tf2_ros/static_transform_publisher.*robot/base_footprint' 2>/dev/
 pkill -f '(^|/)tf2_ros/static_transform_publisher.*--child-frame-id base_link' 2>/dev/null || true
 
 # Nav2 nodes launched by this repo (match our params filename).
-pkill -f 'nav2_params_rex\\.yaml' 2>/dev/null || true
+# NOTE: Nav2 bringup may generate rewritten params into /tmp, so don't rely on the params
+# filename. We instead match known Nav2 binaries / containers.
+pkill -f '(^|/)rclcpp_components/component_container(_isolated)?(\\s|$)' 2>/dev/null || true
+# Any Nav2 node binaries (paths like ".../lib/nav2_controller/controller_server").
+pkill -f '(^|/)nav2_[^ ]+' 2>/dev/null || true
+# Nav2 optionally starts docking via opennav_docking.
+pkill -f '(^|/)opennav_docking/opennav_docking(\\s|$)' 2>/dev/null || true
+# Also stop bringup launch processes if they are still around.
+pkill -f 'nav2_.*\\.launch\\.py' 2>/dev/null || true
+
+# Multi-robot helpers / mapping utilities.
+pkill -f '(^|/)tof_slam_sim/(odom_tf_publisher|swarm_map_fuser|tf_namespace_relay|cmd_vel_relay)(\\s|$)' 2>/dev/null || true
 
 # The ROS 2 daemon can cache stale graph info (publisher counts, etc.)
 ros2 daemon stop >/dev/null 2>&1 || true

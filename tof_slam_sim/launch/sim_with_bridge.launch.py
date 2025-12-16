@@ -3,14 +3,115 @@ from __future__ import annotations
 import os
 import platform
 import sys
+import tempfile
+import time
 from datetime import datetime
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, SetEnvironmentVariable
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
+
+
+def _render_bridge_yaml(*, robots: list[str], world_name: str) -> str:
+    sensors = [
+        'front',
+        'front_right',
+        'right',
+        'back_right',
+        'back',
+        'back_left',
+        'left',
+        'front_left',
+    ]
+
+    def _entry(
+        *,
+        ros_topic: str,
+        gz_topic: str,
+        ros_type: str,
+        gz_type: str,
+        direction: str,
+    ) -> str:
+        return (
+            f'- ros_topic_name: "{ros_topic}"\n'
+            f'  gz_topic_name: "{gz_topic}"\n'
+            f'  ros_type_name: "{ros_type}"\n'
+            f'  gz_type_name: "{gz_type}"\n'
+            f'  direction: {direction}\n\n'
+        )
+
+    out = ''
+    out += _entry(
+        ros_topic='/clock',
+        gz_topic=f'/world/{world_name}/clock',
+        ros_type='rosgraph_msgs/msg/Clock',
+        gz_type='gz.msgs.Clock',
+        direction='GZ_TO_ROS',
+    )
+
+    for robot in robots:
+        robot = robot.strip()
+        if not robot:
+            continue
+
+        # cmd_vel topic: robot uses /cmd_vel, others use dedicated per-robot gz topics.
+        ros_cmd = '/cmd_vel' if robot == 'robot' else f'/{robot}/cmd_vel'
+        gz_cmd = '/cmd_vel' if robot == 'robot' else f'/cmd_vel_{robot}'
+        out += _entry(
+            ros_topic=ros_cmd,
+            gz_topic=gz_cmd,
+            ros_type='geometry_msgs/msg/Twist',
+            gz_type='gz.msgs.Twist',
+            direction='ROS_TO_GZ',
+        )
+
+        ros_odom = '/odom' if robot == 'robot' else f'/{robot}/odom'
+        out += _entry(
+            ros_topic=ros_odom,
+            gz_topic=f'/model/{robot}/odometry',
+            ros_type='nav_msgs/msg/Odometry',
+            gz_type='gz.msgs.Odometry',
+            direction='GZ_TO_ROS',
+        )
+
+        for sensor in sensors:
+            ros_scan = f'/scan/{sensor}' if robot == 'robot' else f'/{robot}/scan/{sensor}'
+            out += _entry(
+                ros_topic=ros_scan,
+                gz_topic=f'/world/{world_name}/model/{robot}/link/base_link/sensor/tof_{sensor}/scan',
+                ros_type='sensor_msgs/msg/LaserScan',
+                gz_type='gz.msgs.LaserScan',
+                direction='GZ_TO_ROS',
+            )
+    return out
+
+
+def _make_bridge_node(context, *, use_sim_time):
+    robots_raw = LaunchConfiguration('robots').perform(context)
+    robots = [r.strip() for r in str(robots_raw).split(',') if r.strip()]
+    world_name = LaunchConfiguration('bridge_world').perform(context)
+    world_name = str(world_name).strip() or 'playfield'
+
+    stamp = int(time.time() * 1000)
+    bridge_path = os.path.join(tempfile.gettempdir(), f'tof_bridge_{os.getpid()}_{stamp}.yaml')
+    with open(bridge_path, 'w', encoding='utf-8') as f:
+        f.write(_render_bridge_yaml(robots=robots, world_name=world_name))
+
+    return [
+        Node(
+            package='ros_gz_bridge',
+            executable='parameter_bridge',
+            name='bridge_all',
+            output='screen',
+            parameters=[{
+                'config_file': bridge_path,
+                'use_sim_time': use_sim_time,
+            }],
+        )
+    ]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -18,7 +119,6 @@ def generate_launch_description() -> LaunchDescription:
     use_sim_time = LaunchConfiguration('use_sim_time')
     world = LaunchConfiguration('world')
     world_path = PathJoinSubstitution([pkg_share, 'worlds', world])
-    bridge_config = PathJoinSubstitution([pkg_share, 'config', 'bridge.yaml'])
     log_monitor_path = PathJoinSubstitution([pkg_share, 'scripts', 'log_monitor.py'])
 
     sensors = [
@@ -62,6 +162,11 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Start the built-in cmd_vel autopilot node.',
     )
+    run_logger_arg = DeclareLaunchArgument(
+        'run_logger',
+        default_value='true',
+        description='Start the topic log monitor process (can be expensive).',
+    )
     use_sim_time_arg = DeclareLaunchArgument(
         'use_sim_time',
         default_value='true',
@@ -71,6 +176,16 @@ def generate_launch_description() -> LaunchDescription:
         'world',
         default_value='playfield_sparse.sdf',
         description='World file (SDF) under tof_slam_sim/worlds.',
+    )
+    robots_arg = DeclareLaunchArgument(
+        'robots',
+        default_value='robot',
+        description='Comma-separated robot model names to bridge (e.g. "robot,robot2,robot3,robot4").',
+    )
+    bridge_world_arg = DeclareLaunchArgument(
+        'bridge_world',
+        default_value='playfield',
+        description='Gazebo world name used in topic paths (must match <world name="...">).',
     )
 
     set_gz_resource_path = SetEnvironmentVariable(
@@ -111,15 +226,9 @@ def generate_launch_description() -> LaunchDescription:
             )
         )
 
-    bridge_node = Node(
-        package='ros_gz_bridge',
-        executable='parameter_bridge',
-        name='bridge_all',
-        output='screen',
-        parameters=[{
-            'config_file': bridge_config,
-            'use_sim_time': use_sim_time,
-        }],
+    bridge_node = OpaqueFunction(
+        function=_make_bridge_node,
+        kwargs={'use_sim_time': use_sim_time},
     )
 
     autopilot_env = {
@@ -173,6 +282,7 @@ def generate_launch_description() -> LaunchDescription:
     logger_proc = ExecuteProcess(
         cmd=logger_cmd,
         output='screen',
+        condition=IfCondition(LaunchConfiguration('run_logger')),
     )
 
     bag_topics = ['/cmd_vel', '/odom', '/tf', '/tf_static'] + [f'/scan/{s}' for s in sensors]
@@ -189,8 +299,11 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(record_bag_arg)
     ld.add_action(bag_out_arg)
     ld.add_action(run_autopilot_arg)
+    ld.add_action(run_logger_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(world_arg)
+    ld.add_action(robots_arg)
+    ld.add_action(bridge_world_arg)
 
     ld.add_action(set_gz_resource_path)
     ld.add_action(set_rcl_logging_dir)

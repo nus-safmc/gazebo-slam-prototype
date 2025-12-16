@@ -9,6 +9,11 @@ class PoseToTf(Node):
     def __init__(self):
         super().__init__('pose_to_tf_broadcaster')
 
+        # The PoseStamped topic to convert to TF.
+        self.pose_topic = self.declare_parameter(
+            'pose_topic', '/model/x500_small_tof_0/pose'
+        ).get_parameter_value().string_value
+
         # The parent frame (e.g., 'map' or 'odom')
         self.parent_frame = self.declare_parameter(
             'parent_frame', 'map'
@@ -25,7 +30,7 @@ class PoseToTf(Node):
         # Subscribe to the PoseStamped topic from the bridge
         self.subscription = self.create_subscription(
             PoseStamped,
-            '/model/x500_small_tof_0/pose',  # <-- Make sure this matches your bridge topic
+            self.pose_topic,
             self.pose_callback,
             10)
 
@@ -33,7 +38,10 @@ class PoseToTf(Node):
         t = TransformStamped()
 
         # Read info from the message
-        t.header.stamp = self.get_clock().now().to_msg()
+        if msg.header.stamp.sec == 0 and msg.header.stamp.nanosec == 0:
+            t.header.stamp = self.get_clock().now().to_msg()
+        else:
+            t.header.stamp = msg.header.stamp
         t.header.frame_id = self.parent_frame
         t.child_frame_id = self.child_frame
 
