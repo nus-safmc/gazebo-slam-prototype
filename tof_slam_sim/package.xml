@@ -3,20 +3,20 @@
 <package format="3">
   <name>tof_slam_sim</name>
   <version>0.1.0</version>
-  <description>
-    Simulation of 8x VL53L7CX ToF sensors for 2D SLAM validation using Gazebo Harmonic
-  </description>
+  <description>Simulation of 8x ToF sensors for 2D SLAM validation (Gazebo Harmonic).</description>
+
   <maintainer email="user@todo.todo">user</maintainer>
   <license>Apache-2.0</license>
 
   <buildtool_depend>ament_cmake</buildtool_depend>
   <buildtool_depend>ament_cmake_python</buildtool_depend>
 
-  <depend>rclcpp</depend>
   <depend>rclpy</depend>
   <depend>sensor_msgs</depend>
   <depend>geometry_msgs</depend>
   <depend>nav_msgs</depend>
+  <depend>tf2_ros</depend>
+  <depend>nav2_msgs</depend>
   <depend>ros_gz_bridge</depend>
   <depend>ros_gz_sim</depend>
   <depend>slam_toolbox</depend>

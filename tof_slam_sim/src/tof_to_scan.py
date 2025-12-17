@@ -17,6 +17,17 @@ class TofToScan(Node):
     def __init__(self):
         super().__init__('TofToScan')
 
+        self.output_frame = (
+            self.declare_parameter('output_frame', 'robot/base_link')
+            .get_parameter_value()
+            .string_value
+        )
+        self.output_topic = (
+            self.declare_parameter('output_topic', '/scan_merged')
+            .get_parameter_value()
+            .string_value
+        )
+
         # QoS profile for depth data
         depth_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -33,7 +44,7 @@ class TofToScan(Node):
         
         self.subs = []
         for i in range (8):
-            sub = Subscriber(self, Image, f'/depth/tof_{i+1}')
+            sub = Subscriber(self, Image, f'/depth/tof_{i+1}', qos_profile=depth_qos)
             self.subs.append(sub)
 
         self.ts = ApproximateTimeSynchronizer(
@@ -43,7 +54,7 @@ class TofToScan(Node):
 
         self.pub = self.create_publisher(
             LaserScan,
-            '/scan_merged',
+            self.output_topic,
             10
         )        
         
@@ -51,6 +62,7 @@ class TofToScan(Node):
         try:
             merged_scan = LaserScan()
             merged_scan.header = images[0].header
+            merged_scan.header.frame_id = self.output_frame
             merged_scan.angle_min = 0
             merged_scan.angle_max = 2 * math.pi
             merged_scan.angle_increment = math.pi / 32.0  # pi/4 /8
@@ -62,9 +74,9 @@ class TofToScan(Node):
             num_points = 64
             ranges = [float('inf')] * num_points
 
-            for i in range(8):
-                depth_image = images[i]
-                sensor_angle = i*(math.pi/4)
+            for sensor_index in range(8):
+                depth_image = images[sensor_index]
+                sensor_angle = sensor_index * (math.pi / 4)
                 scan_angle_min = sensor_angle - math.pi/8
                 scan_angle_max = sensor_angle + math.pi/8
                 image = self.cv_bridge.imgmsg_to_cv2(depth_image)
@@ -83,12 +95,12 @@ class TofToScan(Node):
                 scan_increment = merged_scan.angle_increment
                 
                 # Map each range to the merged scan
-                for i, r in enumerate(img_ranges):
+                for col_index, r in enumerate(img_ranges):
                     if not math.isinf(r):
                         # Calculate angle in merged scan frame
-                        angle = scan_angle_max - i * scan_increment
+                        angle = scan_angle_max - col_index * scan_increment
                         #Calculate position offset from origin
-                        r_angle = math.pi/8 - i * math.pi/32 - math.pi/64
+                        r_angle = math.pi/8 - col_index * math.pi/32 - math.pi/64
 
                         #Sensor is offset from centre of drone by 0.05m (radius of ToF-Ring)
                         #Depth camera returns direct projected distance onto its image plane 
