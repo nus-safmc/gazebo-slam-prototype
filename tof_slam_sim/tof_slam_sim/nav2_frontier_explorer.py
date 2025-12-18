@@ -322,6 +322,7 @@ class Nav2FrontierExplorer(Node):
 
         visited = bytearray(size)
         clusters: list[list[int]] = []
+        all_clusters: list[list[int]] = []
         for seed in frontier_indices:
             if visited[seed]:
                 continue
@@ -342,11 +343,15 @@ class Nav2FrontierExplorer(Node):
                     if frontier[nidx] and not visited[nidx]:
                         visited[nidx] = 1
                         q.append(nidx)
+            all_clusters.append(cluster)
             if len(cluster) >= self.min_cluster:
                 clusters.append(cluster)
 
         if not clusters:
-            return None
+            # If the map is still largely unknown, frontier "islands" can be small.
+            # Fall back to using all clusters so we still pick an initial goal and
+            # avoid deadlocking (no motion -> no new map -> no goal).
+            clusters = all_clusters
 
         # Clearance transform: distance (cells) to nearest obstacle. (Unknown doesn't count.)
         clearance_cells = [-1] * size

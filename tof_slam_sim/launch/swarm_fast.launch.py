@@ -6,7 +6,13 @@ import time
 
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    IncludeLaunchDescription,
+    OpaqueFunction,
+    TimerAction,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -57,7 +63,65 @@ def _nav2_actions(context):
     use_sim_time = _truthy(use_sim_time_str)
     run_nav2 = _truthy(LaunchConfiguration('run_nav2').perform(context))
     run_explorer = _truthy(LaunchConfiguration('run_explorer').perform(context))
+    run_autopilot = _truthy(LaunchConfiguration('run_autopilot').perform(context))
     params_path = LaunchConfiguration('nav2_params').perform(context)
+
+    if run_autopilot:
+        # Use the repo's exploration autopilot (one per robot) instead of Nav2.
+        lo = -8.4
+        hi = 8.4
+        mid = 0.0
+        overlap = 0.6
+        quadrants = {
+            'robot': (lo, mid + overlap, lo, mid + overlap),          # SW
+            'robot2': (lo, mid + overlap, mid - overlap, hi),         # NW
+            'robot3': (mid - overlap, hi, mid - overlap, hi),         # NE
+            'robot4': (mid - overlap, hi, lo, mid + overlap),         # SE
+        }
+
+        common_env = {
+            'AP_MODE': 'explore',
+            'AP_MAP_TOPIC': '/map',
+            'AP_MAP_FRAME': 'robot/map',
+            # Conservative defaults for swarm safety.
+            'AP_RATE': '10.0',
+            'AP_EXP_FORWARD': '0.45',
+            'AP_EXP_STRAFE': '0.20',
+            'AP_EXP_TURN': '0.55',
+            'AP_EXP_CLEAR': '1.25',
+            'AP_EXP_AVOID': '0.70',
+            'AP_EXP_INFLATE_M': '0.45',
+            'AP_EXP_BREADTH_FIRST': '1',
+            'AP_EXP_ARENA_ENABLE': '1',
+        }
+
+        actions = []
+        for r in robots:
+            ns = '' if r == 'robot' else r
+            min_x, max_x, min_y, max_y = quadrants[r]
+            env = dict(common_env)
+            env.update({
+                'AP_TOPIC': 'cmd_vel',
+                'AP_ODOM': 'odom',
+                'AP_SCAN_TOPIC': 'scan_merged',
+                'AP_ODOM_FRAME': f'{r}/odom',
+                'AP_EXP_ARENA_MIN_X': str(min_x),
+                'AP_EXP_ARENA_MAX_X': str(max_x),
+                'AP_EXP_ARENA_MIN_Y': str(min_y),
+                'AP_EXP_ARENA_MAX_Y': str(max_y),
+            })
+            actions.append(
+                Node(
+                    package='tof_slam_sim',
+                    executable='auto_pilot',
+                    name='auto_pilot',
+                    namespace=ns,
+                    output='screen',
+                    parameters=[{'use_sim_time': use_sim_time}],
+                    additional_env=env,
+                )
+            )
+        return actions
 
     if not run_nav2 and not run_explorer:
         return []
@@ -67,10 +131,10 @@ def _nav2_actions(context):
     )
 
     # Split arena into 4 overlapping quadrants so robots spread out instead of chasing the same frontier.
-    # Keep a margin from the perimeter walls so Nav2 doesn't try to drive
-    # into inflated/lethal cells right next to the boundary.
-    lo = -8.8
-    hi = 8.8
+    # Keep a margin from the perimeter walls / keepout band so Nav2 doesn't end up with a
+    # "start occupied" condition when a robot gets too close to the border.
+    lo = -8.4
+    hi = 8.4
     mid = 0.0
     overlap = 0.6
     quadrants = {
@@ -84,25 +148,6 @@ def _nav2_actions(context):
     for r in robots:
         ns = '' if r == 'robot' else r
         robot_params = _write_nav2_params(base_path=str(params_path), robot=r)
-
-        if run_nav2 and r != 'robot':
-            actions.append(
-                Node(
-                    package='tof_slam_sim',
-                    executable='tf_namespace_relay',
-                    name='tf_namespace_relay',
-                    namespace=ns,
-                    output='screen',
-                    parameters=[{
-                        'use_sim_time': use_sim_time,
-                        'robot_prefix': r,
-                        'in_tf_topic': '/tf',
-                        'in_tf_static_topic': '/tf_static',
-                        'out_tf_topic': 'tf',
-                        'out_tf_static_topic': 'tf_static',
-                    }],
-                )
-            )
 
         if run_nav2:
             actions.append(
@@ -150,13 +195,18 @@ def _nav2_actions(context):
                         'arena_max_y': float(max_y),
                         'replan_period_sec': 2.0,
                         'goal_timeout_sec': 30.0,
-                        'goal_offset_m': 1.2,
-                        'min_frontier_cluster_size': 8,
+                        'goal_offset_m': 1.6,
+                        'min_frontier_cluster_size': 6,
                         'breadth_first': True,
-                        'breadth_min_frontier_m_start': 2.5,
+                        'breadth_min_frontier_m_start': 1.8,
                         'breadth_min_frontier_m_end': 0.6,
-                        'breadth_min_goal_dist_start': 3.0,
+                        'breadth_min_goal_dist_start': 2.2,
                         'breadth_min_goal_dist_end': 0.8,
+                        # Bias goal selection toward open space so robots don't hug walls.
+                        'clearance_weight': 10.0,
+                        'clearance_min_start': 1.2,
+                        'clearance_min_m': 0.9,
+                        'clearance_penalty': 20.0,
                     }],
                 )
             )
@@ -205,7 +255,7 @@ def generate_launch_description() -> LaunchDescription:
     declare_stub_autopilot = DeclareLaunchArgument(
         'run_autopilot',
         default_value='false',
-        description='Deprecated (unused). Use run_nav2/run_explorer instead.',
+        description='Run 4 autopilot explorers (one per robot) instead of Nav2.',
     )
 
     robots = ['robot', 'robot2', 'robot3', 'robot4']
@@ -224,61 +274,26 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
-    # Static transforms:
-    # - robot/map -> <robot>/odom (identity) so everyone shares the same global map frame
-    # - <robot>/base_footprint -> <robot>/base_link (identity) for consumers expecting base_link
-    static_tfs: list[Node] = []
-    for r in robots:
-        static_tfs.append(
-            Node(
-                package='tf2_ros',
-                executable='static_transform_publisher',
-                name=f'{r}_map_to_odom',
-                arguments=[
-                    '--frame-id', 'robot/map',
-                    '--child-frame-id', f'{r}/odom',
-                    '--x', '0', '--y', '0', '--z', '0',
-                    '--roll', '0', '--pitch', '0', '--yaw', '0',
-                ],
-                parameters=[{'use_sim_time': use_sim_time}],
-            )
-        )
-        static_tfs.append(
-            Node(
-                package='tf2_ros',
-                executable='static_transform_publisher',
-                name=f'{r}_basefoot_to_baselink',
-                arguments=[
-                    '--frame-id', f'{r}/base_footprint',
-                    '--child-frame-id', f'{r}/base_link',
-                    '--x', '0', '--y', '0', '--z', '0',
-                    '--roll', '0', '--pitch', '0', '--yaw', '0',
-                ],
-                parameters=[{'use_sim_time': use_sim_time}],
-            )
-        )
-
-    # Keep compatibility with older RViz setups that reference plain `base_link`.
-    alias_robot_base_link_to_plain = Node(
-        package='tf2_ros',
-        executable='static_transform_publisher',
-        name='alias_robot_base_link_to_plain',
-        arguments=[
-            '--frame-id', 'robot/base_link',
-            '--child-frame-id', 'base_link',
-            '--x', '0', '--y', '0', '--z', '0',
-            '--roll', '0', '--pitch', '0', '--yaw', '0',
-        ],
-        parameters=[{'use_sim_time': use_sim_time}],
+    # Publish required TF for all robots (static transforms + odom->base_footprint),
+    # including namespaced `/robotN/tf` streams for Nav2 stacks.
+    swarm_tf = Node(
+        package='tof_slam_sim',
+        executable='swarm_tf_broadcaster',
+        name='swarm_tf_broadcaster',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'robots': robots,
+            'map_frame': 'robot/map',
+            'publish_base_link_alias': True,
+        }],
     )
 
     # Merge each robot's 8 ToF LaserScans into its own 360° scan topic.
     scan_mergers: list[Node] = []
-    odom_tfs: list[Node] = []
     for r in robots:
         prefix = '' if r == 'robot' else f'/{r}'
         out_topic = '/scan_merged' if r == 'robot' else f'/{r}/scan_merged'
-        odom_topic = '/odom' if r == 'robot' else f'/{r}/odom'
         scan_mergers.append(
             Node(
                 package='tof_slam_sim',
@@ -290,24 +305,6 @@ def generate_launch_description() -> LaunchDescription:
                     'output_topic': out_topic,
                     'output_frame': f'{r}/base_footprint',
                     'publish_hz': 10.0,
-                }],
-                output='screen',
-            )
-        )
-        odom_tfs.append(
-            Node(
-                package='tof_slam_sim',
-                executable='odom_tf_publisher',
-                name=f'{r}_odom_tf',
-                parameters=[{
-                    'use_sim_time': use_sim_time,
-                    'odom_topic': odom_topic,
-                    'parent_frame': f'{r}/odom',
-                    'child_frame': f'{r}/base_footprint',
-                    'yaw_only': True,
-                    'use_message_z': False,
-                    'z_override': 0.0,
-                    'smoothing_alpha': 1.0,
                 }],
                 output='screen',
             )
@@ -324,6 +321,7 @@ def generate_launch_description() -> LaunchDescription:
             'map_frame': 'robot/map',
             'map_topic': '/map',
             'update_topic': '/map_updates',
+            'robots': robots,
             'scan_topics': [
                 '/scan_merged',
                 '/robot2/scan_merged',
@@ -335,11 +333,20 @@ def generate_launch_description() -> LaunchDescription:
             'max_x': 10.0,
             'min_y': -10.0,
             'max_y': 10.0,
+            # Seed an occupied border so robots keep a safety buffer from the perimeter walls.
+            # This is enforced in both global + local costmaps via the shared `/map` static layer.
+            'seed_keepout': True,
+            # Match the explorer arena bounds (±8.4m) so Nav2 won't route along the outer wall band.
+            'keepout_margin_m': 1.6,
             'publish_period_sec': 0.5,
         }],
     )
 
-    nav2_and_exploration = OpaqueFunction(function=_nav2_actions)
+    # Give Gazebo + bridge + TF a moment to come up so all Nav2 stacks can activate.
+    nav2_and_exploration = TimerAction(
+        period=5.0,
+        actions=[OpaqueFunction(function=_nav2_actions)],
+    )
 
     rviz = Node(
         package='rviz2',
@@ -359,12 +366,8 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(declare_rviz)
     ld.add_action(declare_stub_autopilot)
     ld.add_action(sim_launch)
-    for n in static_tfs:
-        ld.add_action(n)
-    ld.add_action(alias_robot_base_link_to_plain)
+    ld.add_action(swarm_tf)
     for n in scan_mergers:
-        ld.add_action(n)
-    for n in odom_tfs:
         ld.add_action(n)
     ld.add_action(fuser)
     ld.add_action(nav2_and_exploration)

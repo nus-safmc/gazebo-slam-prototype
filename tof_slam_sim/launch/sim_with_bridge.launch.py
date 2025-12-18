@@ -8,7 +8,12 @@ import time
 from datetime import datetime
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, OpaqueFunction, SetEnvironmentVariable
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    OpaqueFunction,
+    SetEnvironmentVariable,
+)
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
@@ -96,7 +101,9 @@ def _make_bridge_node(context, *, use_sim_time):
     world_name = str(world_name).strip() or 'playfield'
 
     stamp = int(time.time() * 1000)
-    bridge_path = os.path.join(tempfile.gettempdir(), f'tof_bridge_{os.getpid()}_{stamp}.yaml')
+    bridge_path = os.path.join(
+        tempfile.gettempdir(), f'tof_bridge_{os.getpid()}_{stamp}.yaml'
+    )
     with open(bridge_path, 'w', encoding='utf-8') as f:
         f.write(_render_bridge_yaml(robots=robots, world_name=world_name))
 
@@ -185,7 +192,7 @@ def generate_launch_description() -> LaunchDescription:
     bridge_world_arg = DeclareLaunchArgument(
         'bridge_world',
         default_value='playfield',
-        description='Gazebo world name used in topic paths (must match <world name="...">).',
+        description='Gazebo world name used in topic paths (must match <world name=\"...\">).',
     )
 
     set_gz_resource_path = SetEnvironmentVariable(

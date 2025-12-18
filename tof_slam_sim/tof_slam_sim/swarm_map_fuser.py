@@ -9,6 +9,7 @@ from typing import Iterable, Optional
 import rclpy
 from map_msgs.msg import OccupancyGridUpdate
 from nav_msgs.msg import OccupancyGrid
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -70,6 +71,11 @@ class SwarmMapFuser(Node):
         self.declare_parameter('map_topic', '/map')
         self.declare_parameter('update_topic', '/map_updates')
         self.declare_parameter(
+            'robots',
+            [''],
+            ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY),
+        )
+        self.declare_parameter(
             'scan_topics',
             [
                 '/scan_merged',
@@ -86,6 +92,7 @@ class SwarmMapFuser(Node):
         self.declare_parameter('publish_period_sec', 0.5)
         self.declare_parameter('seed_keepout', True)
         self.declare_parameter('keepout_margin_m', 0.2)
+        self.declare_parameter('filter_robot_radius_m', 0.35)
         self.declare_parameter('free_update', -1)
         self.declare_parameter('occ_update', 4)
         self.declare_parameter('min_log_odds', -25)
@@ -98,6 +105,27 @@ class SwarmMapFuser(Node):
         self.map_topic = str(self.get_parameter('map_topic').value)
         self.update_topic = str(self.get_parameter('update_topic').value)
         scan_topics = list(self.get_parameter('scan_topics').value)
+
+        robots = [str(r).strip() for r in self.get_parameter('robots').value if str(r).strip()]
+        if not robots:
+            derived: set[str] = set()
+            for t in scan_topics:
+                topic = str(t).strip()
+                if not topic:
+                    continue
+                if topic.startswith('/robot'):
+                    parts = topic.strip('/').split('/', 1)
+                    if parts and parts[0].startswith('robot'):
+                        derived.add(parts[0])
+                else:
+                    derived.add('robot')
+            robots = sorted(derived) if derived else ['robot']
+        self._robots = list(robots)
+        self._robot_base_frames = {r: f'{r}/base_footprint' for r in self._robots}
+
+        self._filter_robot_radius_m = float(self.get_parameter('filter_robot_radius_m').value)
+        if self._filter_robot_radius_m < 0.0:
+            self._filter_robot_radius_m = 0.0
 
         res = float(self.get_parameter('resolution').value)
         min_x = float(self.get_parameter('min_x').value)
@@ -131,6 +159,9 @@ class SwarmMapFuser(Node):
         size = self._spec.width * self._spec.height
         self._log_odds = array('h', [0]) * size
         self._observed = bytearray(size)
+        # Cells that are permanently occupied (e.g. perimeter keepout band).
+        # This prevents the raytracer from accidentally "clearing" the border.
+        self._keepout = bytearray(size)
         self._dirty = False
         self._published_once = False
 
@@ -176,7 +207,7 @@ class SwarmMapFuser(Node):
 
         self.get_logger().info(
             f'Global map fuser online: frame={self.map_frame} grid={width}x{height} '
-            f'res={res:.3f}m scans={len(scan_topics)}'
+            f'res={res:.3f}m scans={len(scan_topics)} robots={robots}'
         )
 
     def _seed_keepout(self, *, margin_m: float) -> None:
@@ -200,6 +231,7 @@ class SwarmMapFuser(Node):
                     idx = row + ix
                     self._observed[idx] = 1
                     self._log_odds[idx] = occ
+                    self._keepout[idx] = 1
                     seeded += 1
 
         self._dirty = True
@@ -248,6 +280,8 @@ class SwarmMapFuser(Node):
         if not self._in_bounds(ix, iy):
             return
         idx = self._idx(ix, iy)
+        if self._keepout[idx]:
+            return
         self._observed[idx] = 1
         v = int(self._log_odds[idx]) + int(delta)
         if v < self._min_lo:
@@ -287,6 +321,28 @@ class SwarmMapFuser(Node):
                 max_range = self._max_range_override
             max_range = max(0.1, max_range)
 
+            # Filter out OTHER robots so they don't get fused into the static map.
+            # Do not filter the scanning robot itself; otherwise nearby walls/pillars
+            # disappear right when we need them most (leading to collisions).
+            scan_robot = frame.split('/', 1)[0] if '/' in frame else ''
+            robot_xy: list[tuple[float, float]] = []
+            if self._filter_robot_radius_m > 0.0 and self._robot_base_frames:
+                stamp = Time.from_msg(msg.header.stamp)
+                for name, base in self._robot_base_frames.items():
+                    if name == scan_robot:
+                        continue
+                    try:
+                        rtf = self._tf_buffer.lookup_transform(
+                            self.map_frame,
+                            base,
+                            stamp,
+                            timeout=Duration(seconds=0.05),
+                        )
+                    except TransformException:
+                        continue
+                    robot_xy.append((float(rtf.transform.translation.x), float(rtf.transform.translation.y)))
+            rr2 = self._filter_robot_radius_m * self._filter_robot_radius_m
+
             a = float(msg.angle_min)
             inc = float(msg.angle_increment) if msg.angle_increment != 0.0 else 0.0
             if inc == 0.0:
@@ -322,6 +378,29 @@ class SwarmMapFuser(Node):
                 ey = oy + dy * r_use
                 end_ix, end_iy = self._world_to_cell(ex, ey)
 
+                # Don't fuse other robots into the static map (it causes "start occupied"
+                # and can wedge planners/controllers). Treat hits near robot bodies as
+                # non-occupied endpoints: raytrace free up to that point but don't mark it.
+                if hit and rr2 > 0.0 and robot_xy:
+                    for rx, ry in robot_xy:
+                        ddx = ex - rx
+                        ddy = ey - ry
+                        if (ddx * ddx + ddy * ddy) <= rr2:
+                            hit = False
+                            break
+
+                # Avoid marking the sensor origin cell as occupied when a hit falls within
+                # the same grid cell as the robot. This can happen with very short ranges
+                # (e.g. after a collision) and will cause Nav2 "Start occupied" failures.
+                if end_ix == start_ix and end_iy == start_iy:
+                    self._apply_update(start_ix, start_iy, self._free_update)
+                    if hit:
+                        step_ix = start_ix + (1 if dx > 0.0 else (-1 if dx < 0.0 else 0))
+                        step_iy = start_iy + (1 if dy > 0.0 else (-1 if dy < 0.0 else 0))
+                        if step_ix != start_ix or step_iy != start_iy:
+                            self._apply_update(step_ix, step_iy, self._occ_update)
+                    continue
+
                 # Free space along the ray (excluding the endpoint).
                 last = None
                 for cell in _bresenham(start_ix, start_iy, end_ix, end_iy):
@@ -349,6 +428,9 @@ class SwarmMapFuser(Node):
 
         data: list[int] = [0] * (self._spec.width * self._spec.height)
         for i in range(len(data)):
+            if self._keepout[i]:
+                data[i] = 100
+                continue
             if not self._observed[i]:
                 data[i] = -1
                 continue
