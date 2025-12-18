@@ -518,7 +518,7 @@
     <include>
       <uri>model://rex_quadcopter_2</uri>
       <name>robot2</name>
-      <pose>-8 6 0.05 0 0 1.5708</pose>
+      <pose>-6.5 5.4 0.05 0 0 1.5708</pose>
     </include>
 
     <include>
