@@ -29,8 +29,13 @@ class ScanMerger(Node):
         self.declare_parameter('output_topic', '/scan_merged')
         self.declare_parameter('output_frame', 'robot/base_footprint')
         self.declare_parameter('apply_yaw_offsets', True)
+        self.declare_parameter('apply_xy_offsets', True)
         self.declare_parameter(
             'yaw_offsets_deg',
+            [],
+        )
+        self.declare_parameter(
+            'xy_offsets_m',
             [],
         )
         self.declare_parameter('stamp_policy', 'min')      # min|max|front
@@ -43,6 +48,7 @@ class ScanMerger(Node):
         self.output_topic = self.get_parameter('output_topic').get_parameter_value().string_value
         self.output_frame = self.get_parameter('output_frame').get_parameter_value().string_value
         self.apply_yaw_offsets = bool(self.get_parameter('apply_yaw_offsets').value)
+        self.apply_xy_offsets = bool(self.get_parameter('apply_xy_offsets').value)
         self.stamp_policy = self.get_parameter('stamp_policy').get_parameter_value().string_value
         self.ring_min = float(self.get_parameter('ring_min').get_parameter_value().double_value)
         self.ring_max = float(self.get_parameter('ring_max').get_parameter_value().double_value)
@@ -53,6 +59,7 @@ class ScanMerger(Node):
         self._latest: Dict[str, LaserScan] = {}
         self._seen: Dict[str, bool] = {t: False for t in topics}
         self._yaw_offsets_rad = self._build_yaw_offsets(topics)
+        self._xy_offsets_m = self._build_xy_offsets(topics)
 
         qos = _qos_sensor_data(depth=10)
         for t in topics:
@@ -61,7 +68,7 @@ class ScanMerger(Node):
         self.pub = self.create_publisher(
             LaserScan,
             self.output_topic,
-            _qos_sensor_data(depth=5),
+            _qos_sensor_data(depth=5, reliability=ReliabilityPolicy.RELIABLE),
         )
         self.timer = self.create_timer(1.0 / max(1e-3, publish_hz), self._on_timer)
 
@@ -122,6 +129,63 @@ class ScanMerger(Node):
                 out[topic] = math.radians(default_deg.get(suffix, 0.0))
         return out
 
+    def _build_xy_offsets(self, topics: List[str]) -> Dict[str, tuple[float, float]]:
+        if not self.apply_xy_offsets:
+            return {t: (0.0, 0.0) for t in topics}
+
+        # Default ring offsets match `tof_slam_sim/models/rex_quadcopter/model.sdf`.
+        default_xy = {
+            'front': (0.12, 0.0),
+            'front_right': (0.085, 0.085),
+            'right': (0.0, 0.12),
+            'back_right': (-0.085, 0.085),
+            'back': (-0.12, 0.0),
+            'back_left': (-0.085, -0.085),
+            'left': (0.0, -0.12),
+            'front_left': (0.085, -0.085),
+        }
+
+        overrides = list(
+            self.get_parameter('xy_offsets_m').get_parameter_value().string_array_value
+        )
+        overrides_xy: Dict[str, tuple[float, float]] = {}
+        for raw in overrides:
+            item = str(raw).strip()
+            if not item:
+                continue
+            if ':' not in item:
+                self.get_logger().warning(
+                    f'Ignoring malformed xy offset "{item}" (use topic:x:y or name:x:y).'
+                )
+                continue
+            key, rest = item.split(':', 1)
+            parts = [p.strip() for p in rest.replace(',', ':').split(':') if p.strip()]
+            if len(parts) != 2:
+                self.get_logger().warning(
+                    f'Ignoring malformed xy offset "{item}" (expected two numbers).'
+                )
+                continue
+            try:
+                x = float(parts[0])
+                y = float(parts[1])
+            except ValueError:
+                self.get_logger().warning(
+                    f'Ignoring xy offset "{item}" (could not parse floats).'
+                )
+                continue
+            overrides_xy[key.strip()] = (x, y)
+
+        out: Dict[str, tuple[float, float]] = {}
+        for topic in topics:
+            suffix = topic.rsplit('/', 1)[-1]
+            if topic in overrides_xy:
+                out[topic] = overrides_xy[topic]
+            elif suffix in overrides_xy:
+                out[topic] = overrides_xy[suffix]
+            else:
+                out[topic] = default_xy.get(suffix, (0.0, 0.0))
+        return out
+
     def _mk_cb(self, topic: str):
         def _cb(msg: LaserScan):
             self._latest[topic] = msg
@@ -170,6 +234,7 @@ class ScanMerger(Node):
 
         for topic, s in scans:
             yaw_offset = self._yaw_offsets_rad.get(topic, 0.0)
+            x_off, y_off = self._xy_offsets_m.get(topic, (0.0, 0.0))
             a = s.angle_min
             inc = max(s.angle_increment, 1e-6)
             out_range_min = min(out_range_min, s.range_min)
@@ -178,6 +243,11 @@ class ScanMerger(Node):
                 if r is None or math.isnan(r):
                     continue
                 ang = a + i * inc + yaw_offset
+                if self.apply_xy_offsets and (x_off != 0.0 or y_off != 0.0):
+                    px = x_off + r * math.cos(ang)
+                    py = y_off + r * math.sin(ang)
+                    ang = math.atan2(py, px)
+                    r = math.hypot(px, py)
                 span = self.ring_max - self.ring_min
                 while ang < self.ring_min: ang += span
                 while ang >= self.ring_max: ang -= span

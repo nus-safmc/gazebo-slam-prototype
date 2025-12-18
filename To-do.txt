@@ -1,0 +1,2 @@
+Need to fix drone crashing into wall during multi agent nav2 control -> need to see how to launch multiple nav2 seperately or control seperately
+Need to fix pose drifitng / inccurate sensors -> obsstacle does not show on map

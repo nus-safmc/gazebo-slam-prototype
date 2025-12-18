@@ -72,7 +72,6 @@ class Nav2FrontierExplorer(Node):
     def __init__(self) -> None:
         super().__init__('nav2_frontier_explorer')
 
-        self.declare_parameter('use_sim_time', True)
         self.map_topic = str(self.declare_parameter('map_topic', '/map').value)
         self.goal_frame = str(self.declare_parameter('goal_frame', 'robot/map').value)
         self.base_frame = str(self.declare_parameter('base_frame', 'robot/base_link').value)
@@ -89,6 +88,36 @@ class Nav2FrontierExplorer(Node):
         self.clearance_weight = float(self.declare_parameter('clearance_weight', 6.0).value)
         self.clearance_min_m = float(self.declare_parameter('clearance_min_m', 0.6).value)
         self.clearance_penalty = float(self.declare_parameter('clearance_penalty', 12.0).value)
+
+        # Hard arena bounds (map frame) to prevent "chasing" unknown space outside perimeter walls.
+        self.arena_enabled = bool(self.declare_parameter('arena_enabled', True).value)
+        self.arena_min_x = float(self.declare_parameter('arena_min_x', -9.4).value)
+        self.arena_max_x = float(self.declare_parameter('arena_max_x', 9.4).value)
+        self.arena_min_y = float(self.declare_parameter('arena_min_y', -9.4).value)
+        self.arena_max_y = float(self.declare_parameter('arena_max_y', 9.4).value)
+
+        # Breadth-first (coarse-to-fine) exploration thresholds.
+        self.breadth_first = bool(self.declare_parameter('breadth_first', True).value)
+        self.breadth_cov_lo = float(self.declare_parameter('breadth_cov_lo', 0.10).value)
+        self.breadth_cov_hi = float(self.declare_parameter('breadth_cov_hi', 0.75).value)
+        self.breadth_min_frontier_m_start = float(
+            self.declare_parameter('breadth_min_frontier_m_start', 2.0).value
+        )
+        self.breadth_min_frontier_m_end = float(
+            self.declare_parameter('breadth_min_frontier_m_end', 0.4).value
+        )
+        self.breadth_min_goal_dist_start = float(
+            self.declare_parameter('breadth_min_goal_dist_start', 2.5).value
+        )
+        self.breadth_min_goal_dist_end = float(
+            self.declare_parameter('breadth_min_goal_dist_end', 0.8).value
+        )
+        # Optional: be stricter about wide-open space early, then relax.
+        self.clearance_min_start = float(
+            self.declare_parameter('clearance_min_start', self.clearance_min_m).value
+        )
+        self._breadth_log_period = float(self.declare_parameter('breadth_log_sec', 8.0).value)
+        self._breadth_next_log = 0.0
 
         map_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -109,6 +138,7 @@ class Nav2FrontierExplorer(Node):
 
         self._goal_history: deque[tuple[float, float]] = deque(maxlen=30)
         self._last_plan = self.get_clock().now()
+        self._arena_next_warn = 0.0
 
         self.timer = self.create_timer(0.5, self._tick)
         self.get_logger().info(
@@ -177,17 +207,94 @@ class Nav2FrontierExplorer(Node):
         if len(data) < size:
             return None
 
+        arena_enabled = bool(getattr(self, 'arena_enabled', False))
+        arena_min_x = float(getattr(self, 'arena_min_x', -math.inf))
+        arena_max_x = float(getattr(self, 'arena_max_x', math.inf))
+        arena_min_y = float(getattr(self, 'arena_min_y', -math.inf))
+        arena_max_y = float(getattr(self, 'arena_max_y', math.inf))
+        robot_x, robot_y = robot_xy
+        if arena_enabled and not (
+            arena_min_x <= robot_x <= arena_max_x and arena_min_y <= robot_y <= arena_max_y
+        ):
+            # Keep the arena filter enabled so we don't chase unknown space outside the perimeter.
+            # If the robot slightly clips outside bounds (e.g. after a wall contact), clamp the
+            # pose for scoring purposes rather than disabling the bounds entirely.
+            clamped_x = min(max(robot_x, arena_min_x), arena_max_x)
+            clamped_y = min(max(robot_y, arena_min_y), arena_max_y)
+            now_s = self.get_clock().now().nanoseconds * 1e-9
+            if now_s >= getattr(self, '_arena_next_warn', 0.0):
+                self._arena_next_warn = now_s + 5.0
+                self.get_logger().warning(
+                    f'Robot pose ({robot_x:.2f},{robot_y:.2f}) is outside arena_* bounds; '
+                    f'clamping to ({clamped_x:.2f},{clamped_y:.2f}) for planning.'
+                )
+            robot_x, robot_y = clamped_x, clamped_y
+
         unknown = bytearray(size)
         free = bytearray(size)
         obstacle = bytearray(size)
+
+        known_cells = 0
+        if arena_enabled:
+            arena_area = max(0.0, (arena_max_x - arena_min_x) * (arena_max_y - arena_min_y))
+            expected_total = max(1, int(round(arena_area / (meta.res * meta.res))))
+        else:
+            expected_total = max(1, size)
+
+        cos_o = math.cos(meta.origin_yaw)
+        sin_o = math.sin(meta.origin_yaw)
         for i in range(size):
+            if arena_enabled:
+                ix = i - (i // meta.width) * meta.width
+                iy = i // meta.width
+                lx = (ix + 0.5) * meta.res
+                ly = (iy + 0.5) * meta.res
+                wx = meta.origin_x + cos_o * lx - sin_o * ly
+                wy = meta.origin_y + sin_o * lx + cos_o * ly
+                if not (
+                    arena_min_x <= wx <= arena_max_x and arena_min_y <= wy <= arena_max_y
+                ):
+                    obstacle[i] = 1
+                    continue
+
             v = int(data[i])
             if v == -1:
                 unknown[i] = 1
-            elif v <= self.free_thresh:
+                continue
+
+            known_cells += 1
+            if v <= self.free_thresh:
                 free[i] = 1
             elif v >= self.occupied_thresh:
                 obstacle[i] = 1
+
+        coverage = max(0.0, min(1.0, float(known_cells) / float(expected_total)))
+        if self.breadth_first:
+            if self.breadth_cov_hi <= self.breadth_cov_lo:
+                t = 1.0
+            else:
+                t = (coverage - self.breadth_cov_lo) / (self.breadth_cov_hi - self.breadth_cov_lo)
+            t = max(0.0, min(1.0, t))
+            min_frontier_m = self.breadth_min_frontier_m_start + (
+                self.breadth_min_frontier_m_end - self.breadth_min_frontier_m_start
+            ) * t
+            min_goal_dist_m = self.breadth_min_goal_dist_start + (
+                self.breadth_min_goal_dist_end - self.breadth_min_goal_dist_start
+            ) * t
+            clearance_min_m = self.clearance_min_start + (self.clearance_min_m - self.clearance_min_start) * t
+        else:
+            min_frontier_m = 0.0
+            min_goal_dist_m = 0.0
+            clearance_min_m = self.clearance_min_m
+
+        if self.breadth_first and self._breadth_log_period > 0.0:
+            now_s = self.get_clock().now().nanoseconds * 1e-9
+            if now_s >= getattr(self, '_breadth_next_log', 0.0):
+                self._breadth_next_log = now_s + self._breadth_log_period
+                self.get_logger().info(
+                    f'Explore coverage={coverage * 100.0:.0f}% '
+                    f'min_frontier={min_frontier_m:.1f}m min_goal_dist={min_goal_dist_m:.1f}m'
+                )
 
         neighbors4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
         neighbors8 = (
@@ -215,6 +322,7 @@ class Nav2FrontierExplorer(Node):
 
         visited = bytearray(size)
         clusters: list[list[int]] = []
+        all_clusters: list[list[int]] = []
         for seed in frontier_indices:
             if visited[seed]:
                 continue
@@ -235,11 +343,15 @@ class Nav2FrontierExplorer(Node):
                     if frontier[nidx] and not visited[nidx]:
                         visited[nidx] = 1
                         q.append(nidx)
+            all_clusters.append(cluster)
             if len(cluster) >= self.min_cluster:
                 clusters.append(cluster)
 
         if not clusters:
-            return None
+            # If the map is still largely unknown, frontier "islands" can be small.
+            # Fall back to using all clusters so we still pick an initial goal and
+            # avoid deadlocking (no motion -> no new map -> no goal).
+            clusters = all_clusters
 
         # Clearance transform: distance (cells) to nearest obstacle. (Unknown doesn't count.)
         clearance_cells = [-1] * size
@@ -267,98 +379,121 @@ class Nav2FrontierExplorer(Node):
                         clearance_cells[nidx] = next_cost
                         cq.append(nidx)
 
-        robot_x, robot_y = robot_xy
-        best_score = -1e12
-        best_goal: Optional[tuple[float, float]] = None
-
         offset_cells = max(1, int(math.ceil(self.goal_offset_m / meta.res)))
 
-        for cluster in clusters:
-            # Compute centroid in grid coords.
-            sx = 0.0
-            sy = 0.0
-            for c in cluster:
-                sx += c - (c // meta.width) * meta.width
-                sy += c // meta.width
-            cx = sx / len(cluster)
-            cy = sy / len(cluster)
+        def _pick_goal(
+            min_frontier_len_m: float,
+            min_goal_dist: float,
+            clearance_min: float,
+        ) -> Optional[tuple[float, float]]:
+            best_score = -1e12
+            best_goal: Optional[tuple[float, float]] = None
 
-            # Choose representative frontier cell closest to centroid.
-            rep = min(
-                cluster,
-                key=lambda i: (i - (i // meta.width) * meta.width - cx) ** 2 + (i // meta.width - cy) ** 2,
-            )
-            rep_x = rep - (rep // meta.width) * meta.width
-            rep_y = rep // meta.width
+            for cluster in clusters:
+                if len(cluster) * meta.res < min_frontier_len_m:
+                    continue
 
-            # Estimate direction away from unknown and step inward.
-            vx = 0.0
-            vy = 0.0
-            for dx, dy in neighbors4:
-                nidx = (rep_y + dy) * meta.width + (rep_x + dx)
-                if unknown[nidx]:
-                    vx -= dx
-                    vy -= dy
-            if vx == 0.0 and vy == 0.0:
-                # Fallback: move toward cluster centroid.
-                vx = cx - rep_x
-                vy = cy - rep_y
-            norm = math.hypot(vx, vy)
-            if norm <= 1e-6:
-                continue
-            vx /= norm
-            vy /= norm
+                # Compute centroid in grid coords.
+                sx = 0.0
+                sy = 0.0
+                for c in cluster:
+                    sx += c - (c // meta.width) * meta.width
+                    sy += c // meta.width
+                cx = sx / len(cluster)
+                cy = sy / len(cluster)
 
-            goal_ix = int(round(rep_x + vx * offset_cells))
-            goal_iy = int(round(rep_y + vy * offset_cells))
-            goal_ix = max(1, min(meta.width - 2, goal_ix))
-            goal_iy = max(1, min(meta.height - 2, goal_iy))
+                # Choose representative frontier cell closest to centroid.
+                rep = min(
+                    cluster,
+                    key=lambda i: (
+                        (i - (i // meta.width) * meta.width - cx) ** 2
+                        + (i // meta.width - cy) ** 2
+                    ),
+                )
+                rep_x = rep - (rep // meta.width) * meta.width
+                rep_y = rep // meta.width
 
-            goal_idx = goal_iy * meta.width + goal_ix
-            if not free[goal_idx]:
-                # Search a small neighborhood for a free cell.
-                found = False
-                for radius in range(1, 6):
-                    for dx in range(-radius, radius + 1):
-                        for dy in range(-radius, radius + 1):
-                            nx = goal_ix + dx
-                            ny = goal_iy + dy
-                            if nx <= 0 or nx >= meta.width - 1 or ny <= 0 or ny >= meta.height - 1:
-                                continue
-                            nidx = ny * meta.width + nx
-                            if free[nidx]:
-                                goal_ix, goal_iy = nx, ny
-                                found = True
+                # Estimate direction away from unknown and step inward.
+                vx = 0.0
+                vy = 0.0
+                for dx, dy in neighbors4:
+                    nidx = (rep_y + dy) * meta.width + (rep_x + dx)
+                    if unknown[nidx]:
+                        vx -= dx
+                        vy -= dy
+                if vx == 0.0 and vy == 0.0:
+                    # Fallback: move toward cluster centroid.
+                    vx = cx - rep_x
+                    vy = cy - rep_y
+                norm = math.hypot(vx, vy)
+                if norm <= 1e-6:
+                    continue
+                vx /= norm
+                vy /= norm
+
+                goal_ix = int(round(rep_x + vx * offset_cells))
+                goal_iy = int(round(rep_y + vy * offset_cells))
+                goal_ix = max(1, min(meta.width - 2, goal_ix))
+                goal_iy = max(1, min(meta.height - 2, goal_iy))
+
+                goal_idx = goal_iy * meta.width + goal_ix
+                if not free[goal_idx]:
+                    # Search a small neighborhood for a free cell.
+                    found = False
+                    for radius in range(1, 6):
+                        for dx in range(-radius, radius + 1):
+                            for dy in range(-radius, radius + 1):
+                                nx = goal_ix + dx
+                                ny = goal_iy + dy
+                                if (
+                                    nx <= 0
+                                    or nx >= meta.width - 1
+                                    or ny <= 0
+                                    or ny >= meta.height - 1
+                                ):
+                                    continue
+                                nidx = ny * meta.width + nx
+                                if free[nidx]:
+                                    goal_ix, goal_iy = nx, ny
+                                    goal_idx = nidx
+                                    found = True
+                                    break
+                            if found:
                                 break
                         if found:
                             break
-                    if found:
-                        break
-                if not found:
+                    if not found:
+                        continue
+
+                goal_x, goal_y = meta.cell_to_world(goal_ix, goal_iy)
+                dist = math.hypot(goal_x - robot_x, goal_y - robot_y)
+                if dist < min_goal_dist:
                     continue
 
-            goal_x, goal_y = meta.cell_to_world(goal_ix, goal_iy)
-            dist = math.hypot(goal_x - robot_x, goal_y - robot_y)
-            gain = float(len(cluster))
+                gain = float(len(cluster))
+                score = self.gain_weight * gain - self.cost_weight * dist
+                if clearance_cells[goal_idx] >= 0:
+                    clearance_m = clearance_cells[goal_idx] * meta.res
+                    score += self.clearance_weight * clearance_m
+                    if clearance_m < clearance_min:
+                        score -= self.clearance_penalty * (clearance_min - clearance_m)
+                if self._goal_history:
+                    min_sep = min(
+                        math.hypot(goal_x - gx, goal_y - gy) for gx, gy in self._goal_history
+                    )
+                    if min_sep < self.goal_min_sep:
+                        score -= self.repeat_penalty
 
-            score = self.gain_weight * gain - self.cost_weight * dist
-            if clearance_cells[goal_idx] >= 0:
-                clearance_m = clearance_cells[goal_idx] * meta.res
-                score += self.clearance_weight * clearance_m
-                if clearance_m < self.clearance_min_m:
-                    score -= self.clearance_penalty * (self.clearance_min_m - clearance_m)
-            if self._goal_history:
-                min_sep = min(
-                    math.hypot(goal_x - gx, goal_y - gy) for gx, gy in self._goal_history
-                )
-                if min_sep < self.goal_min_sep:
-                    score -= self.repeat_penalty
+                if score > best_score:
+                    best_score = score
+                    best_goal = (goal_x, goal_y)
 
-            if score > best_score:
-                best_score = score
-                best_goal = (goal_x, goal_y)
+            return best_goal
 
-        return best_goal
+        goal = _pick_goal(min_frontier_m, min_goal_dist_m, clearance_min_m)
+        if self.breadth_first and goal is None and (min_frontier_m > 0.0 or min_goal_dist_m > 0.0):
+            goal = _pick_goal(0.0, 0.0, self.clearance_min_m)
+        return goal
 
     # ------------------------------------------------------------------
     # Nav2 integration

@@ -48,7 +48,12 @@ install(DIRECTORY
 set(_python_nodes
   "tof_slam_sim.scan_merger:main:scan_merger"
   "tof_slam_sim.auto_pilot_node:main:auto_pilot"
+  "tof_slam_sim.odom_tf_publisher:main:odom_tf_publisher"
+  "tof_slam_sim.swarm_tf_broadcaster:main:swarm_tf_broadcaster"
   "tof_slam_sim.map_tf_fallback:main:map_tf_fallback"
+  "tof_slam_sim.swarm_map_fuser:main:swarm_map_fuser"
+  "tof_slam_sim.tf_namespace_relay:main:tf_namespace_relay"
+  "tof_slam_sim.cmd_vel_relay:main:cmd_vel_relay"
   "tof_slam_sim.nav2_frontier_explorer:main:nav2_frontier_explorer"
   "tof_slam_sim.topic_monitor:main:topic_monitor"
 )

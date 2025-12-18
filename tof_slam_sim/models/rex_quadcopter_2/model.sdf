@@ -1,6 +1,6 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
-  <model name="rex_quadcopter">
+  <model name="rex_quadcopter_2">
     <static>false</static>
 
     <!-- Main body link -->
@@ -44,84 +44,93 @@
         <material>
           <ambient>0.65 0.55 0.45 1</ambient>
           <diffuse>0.75 0.60 0.50 1</diffuse>
-          <specular>0.2 0.2 0.2 1</specular>
+          <specular>0.05 0.05 0.05 1</specular>
         </material>
       </visual>
-
       <visual name="frame_bottom">
         <pose>0 0 -0.020 0 0 0</pose>
         <geometry><box><size>0.18 0.18 0.004</size></box></geometry>
         <material>
-          <ambient>0.65 0.55 0.45 1</ambient>
-          <diffuse>0.75 0.60 0.50 1</diffuse>
-          <specular>0.2 0.2 0.2 1</specular>
+          <ambient>0.55 0.45 0.35 1</ambient>
+          <diffuse>0.65 0.50 0.40 1</diffuse>
+          <specular>0.05 0.05 0.05 1</specular>
         </material>
       </visual>
 
-      <!-- ===================== GOLD STANDOFFS ===================== -->
-      <visual name="standoff_fr">
-        <pose> 0.07  0.07 0 0 0 0</pose>
-        <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
+      <!-- ===================== ARMS (slim bars) ===================== -->
+      <visual name="arm_front">
+        <pose>0.09 0 0 0 0 0</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
       </visual>
-      <visual name="standoff_fl">
-        <pose>-0.07  0.07 0 0 0 0</pose>
-        <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
+      <visual name="arm_back">
+        <pose>-0.09 0 0 0 0 0</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
       </visual>
-      <visual name="standoff_br">
-        <pose> 0.07 -0.07 0 0 0 0</pose>
-        <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
-        <material><ambient>0.9 0.8 0.3 1</ambient><diffuse>1.0 0.85 0.35 1</diffuse></material>
+      <visual name="arm_left">
+        <pose>0 0.09 0 0 0 1.5708</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
       </visual>
-      <visual name="standoff_bl">
-        <pose>-0.07 -0.07 0 0 0 0</pose>
-        <geometry><cylinder><radius>0.004</radius><length>0.040</length></cylinder></geometry>
+      <visual name="arm_right">
+        <pose>0 -0.09 0 0 0 1.5708</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
       </visual>
 
-      <!-- ===================== THIN GOLD LEGS / PINS ===================== -->
-      <visual name="leg_fr">
-        <pose> 0.055  0.055 -0.040 0 0 0</pose>
-        <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-      </visual>
-      <visual name="leg_fl">
-        <pose>-0.055  0.055 -0.040 0 0 0</pose>
-        <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-      </visual>
-      <visual name="leg_br">
-        <pose> 0.055 -0.055 -0.040 0 0 0</pose>
-        <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
-      </visual>
-      <visual name="leg_bl">
-        <pose>-0.055 -0.055 -0.040 0 0 0</pose>
-        <geometry><cylinder><radius>0.0025</radius><length>0.030</length></cylinder></geometry>
+      <!-- ===================== ELECTRONICS STACK ===================== -->
+      <visual name="electronics_stack">
+        <pose>0 0 0.00 0 0 0</pose>
+        <geometry><box><size>0.06 0.06 0.03</size></box></geometry>
+        <material>
+          <ambient>0.08 0.10 0.10 1</ambient>
+          <diffuse>0.10 0.15 0.15 1</diffuse>
+          <specular>0.02 0.02 0.02 1</specular>
+        </material>
       </visual>
 
-      <!-- ===================== MOTOR CANS ===================== -->
-      <visual name="motor_fr">
-        <pose> 0.095  0.095 0.012 0 0 0</pose>
-        <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-      </visual>
-      <visual name="motor_fl">
-        <pose>-0.095  0.095 0.012 0 0 0</pose>
-        <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-      </visual>
-      <visual name="motor_br">
-        <pose> 0.095 -0.095 0.012 0 0 0</pose>
-        <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
-      </visual>
-      <visual name="motor_bl">
-        <pose>-0.095 -0.095 0.012 0 0 0</pose>
-        <geometry><cylinder><radius>0.018</radius><length>0.018</length></cylinder></geometry>
+      <!-- ===================== BATTERY ===================== -->
+      <visual name="battery">
+        <pose>0 0 -0.040 0 0 0</pose>
+        <geometry><box><size>0.09 0.04 0.03</size></box></geometry>
+        <material>
+          <ambient>0.10 0.10 0.10 1</ambient>
+          <diffuse>0.15 0.15 0.15 1</diffuse>
+        </material>
       </visual>
 
-      <!-- ===================== DARK PROPS ABOVE MOTORS ===================== -->
+      <!-- ===================== CAMERA / SENSOR POD ===================== -->
+      <visual name="sensor_pod">
+        <pose>0.07 0 0.01 0 0 0</pose>
+        <geometry><box><size>0.04 0.03 0.02</size></box></geometry>
+        <material>
+          <ambient>0.08 0.08 0.08 1</ambient>
+          <diffuse>0.12 0.12 0.12 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ===================== PROPELLER GUARDS (thin rings) ===================== -->
+      <visual name="guard_fr">
+        <pose> 0.095 0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+      <visual name="guard_fl">
+        <pose>-0.095 0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+      <visual name="guard_br">
+        <pose> 0.095 -0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+      <visual name="guard_bl">
+        <pose>-0.095 -0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+
+      <!-- ===================== PROPELLERS (flat disks) ===================== -->
       <visual name="prop_fr">
-        <pose> 0.095  0.095 0.022 0 0 0</pose>
+        <pose> 0.095 0.095 0.022 0 0 0</pose>
         <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
       </visual>
       <visual name="prop_fl">
-        <pose>-0.095  0.095 0.022 0 0 0</pose>
+        <pose>-0.095 0.095 0.022 0 0 0</pose>
         <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
       </visual>
       <visual name="prop_br">
@@ -321,7 +330,7 @@
 
     <!-- Velocity control and odometry plugins -->
     <plugin name="gz::sim::systems::VelocityControl" filename="gz-sim-velocity-control-system">
-      <topic>cmd_vel</topic>
+      <topic>/cmd_vel_robot2</topic>
       <use_world_frame>false</use_world_frame>
       <max_linear_velocity>3</max_linear_velocity>
       <max_angular_velocity>2</max_angular_velocity>
@@ -329,8 +338,8 @@
 
     <plugin name="gz::sim::systems::OdometryPublisher" filename="gz-sim-odometry-publisher-system">
       <topic>/odom</topic>
-      <frame_id>robot/odom</frame_id>
-      <child_frame_id>robot/base_link</child_frame_id>
+      <frame_id>robot2/odom</frame_id>
+      <child_frame_id>robot2/base_link</child_frame_id>
       <publish_tf>true</publish_tf>
     </plugin>
 

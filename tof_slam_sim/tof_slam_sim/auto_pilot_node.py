@@ -124,11 +124,57 @@ class AutoPilot(Node):
             self._goal_repeat_penalty = float(os.environ.get('AP_EXP_REPEAT_PENALTY', '8.0'))
             self._frontier_gain_w = float(os.environ.get('AP_EXP_GAIN_W', '1.0'))
             self._frontier_cost_w = float(os.environ.get('AP_EXP_COST_W', '0.35'))
-            self._inflation_radius_m = float(os.environ.get('AP_EXP_INFLATE_M', '0.25'))
+            self._inflation_radius_m = float(os.environ.get('AP_EXP_INFLATE_M', '0.35'))
             self._path_step_m = float(os.environ.get('AP_EXP_PATH_STEP_M', '0.35'))
             self._lookahead_m = float(os.environ.get('AP_EXP_LOOKAHEAD_M', '1.0'))
             self._waypoint_reached_m = float(os.environ.get('AP_EXP_WP_REACHED_M', '0.4'))
             self._planner = os.environ.get('AP_EXP_PLANNER', 'frontier').lower()
+
+            # Arena bounds (map frame). Defaults match the 20m×20m playfield with margin.
+            self._arena_enabled = os.environ.get('AP_EXP_ARENA_ENABLE', '1').lower() in (
+                '1',
+                'true',
+                'yes',
+            )
+            self._arena_min_x = float(os.environ.get('AP_EXP_ARENA_MIN_X', '-9.4'))
+            self._arena_max_x = float(os.environ.get('AP_EXP_ARENA_MAX_X', '9.4'))
+            self._arena_min_y = float(os.environ.get('AP_EXP_ARENA_MIN_Y', '-9.4'))
+            self._arena_max_y = float(os.environ.get('AP_EXP_ARENA_MAX_Y', '9.4'))
+
+            # Breadth-first (coarse-to-fine) exploration: ignore tiny frontier "holes" early
+            # and prefer larger moves; relax constraints as map coverage increases.
+            self._breadth_first = os.environ.get('AP_EXP_BREADTH_FIRST', '1').lower() in (
+                '1',
+                'true',
+                'yes',
+            )
+            self._breadth_cov_lo = float(os.environ.get('AP_EXP_BREADTH_COV_LO', '0.10'))
+            self._breadth_cov_hi = float(os.environ.get('AP_EXP_BREADTH_COV_HI', '0.75'))
+            self._breadth_min_frontier_m_start = float(
+                os.environ.get('AP_EXP_BREADTH_MIN_FRONTIER_M_START', '2.0')
+            )
+            self._breadth_min_frontier_m_end = float(
+                os.environ.get('AP_EXP_BREADTH_MIN_FRONTIER_M_END', '0.4')
+            )
+            self._breadth_min_cost_m_start = float(
+                os.environ.get('AP_EXP_BREADTH_MIN_COST_START', '2.5')
+            )
+            self._breadth_min_cost_m_end = float(
+                os.environ.get('AP_EXP_BREADTH_MIN_COST_END', '0.8')
+            )
+            self._breadth_log_period = float(os.environ.get('AP_EXP_BREADTH_LOG_SEC', '8.0'))
+            self._breadth_next_log = 0.0
+
+            # Stuck detection / recovery to avoid hovering in corners forever.
+            self._stuck_check_sec = float(os.environ.get('AP_STUCK_CHECK_SEC', '2.0'))
+            self._stuck_min_move_m = float(os.environ.get('AP_STUCK_MIN_MOVE_M', '0.18'))
+            self._stuck_cmd_speed_mps = float(os.environ.get('AP_STUCK_CMD_SPEED', '0.12'))
+            self._stuck_hits = 0
+            self._stuck_sample_time = self.get_clock().now()
+            self._stuck_sample_x = self._pose_x
+            self._stuck_sample_y = self._pose_y
+            self._recovery_until = 0.0
+            self._recovery_yaw = 0.0
 
             map_topic = os.environ.get('AP_MAP_TOPIC', '/map')
             map_qos = QoSProfile(
@@ -267,6 +313,12 @@ class AutoPilot(Node):
         left_min = self._sector_min(scan, center_deg=75.0, width_deg=70.0)
         right_min = self._sector_min(scan, center_deg=-75.0, width_deg=70.0)
 
+        if elapsed < getattr(self, '_recovery_until', 0.0):
+            lin_x = -0.12 if front_min < self.explore_clear_distance else 0.0
+            lin_y = 0.0
+            yaw_cmd = self._recovery_yaw
+            return lin_x, lin_y, yaw_cmd
+
         yaw_cmd = 0.0
         lin_x = self.explore_forward
         lin_y = 0.0
@@ -327,7 +379,71 @@ class AutoPilot(Node):
             left_min=left_min,
             right_min=right_min,
         )
+        lin_x, lin_y, yaw_cmd = self._maybe_recover_stuck(
+            elapsed,
+            scan,
+            lin_x,
+            lin_y,
+            yaw_cmd,
+            front_min=front_min,
+            left_min=left_min,
+            right_min=right_min,
+        )
         return lin_x, lin_y, yaw_cmd
+
+    def _maybe_recover_stuck(
+        self,
+        elapsed: float,
+        scan: LaserScan,
+        lin_x: float,
+        lin_y: float,
+        yaw_cmd: float,
+        *,
+        front_min: float,
+        left_min: float,
+        right_min: float,
+    ) -> tuple[float, float, float]:
+        if not self._have_pose:
+            return lin_x, lin_y, yaw_cmd
+
+        # Only consider "stuck" if we're actually commanding motion.
+        cmd_speed = math.hypot(lin_x, lin_y)
+        if cmd_speed < self._stuck_cmd_speed_mps:
+            self._stuck_hits = 0
+            self._stuck_sample_time = self.get_clock().now()
+            self._stuck_sample_x = self._pose_x
+            self._stuck_sample_y = self._pose_y
+            return lin_x, lin_y, yaw_cmd
+
+        now = self.get_clock().now()
+        dt = (now - self._stuck_sample_time).nanoseconds * 1e-9
+        if dt < self._stuck_check_sec:
+            return lin_x, lin_y, yaw_cmd
+
+        moved = math.hypot(self._pose_x - self._stuck_sample_x, self._pose_y - self._stuck_sample_y)
+        self._stuck_sample_time = now
+        self._stuck_sample_x = self._pose_x
+        self._stuck_sample_y = self._pose_y
+
+        if moved < self._stuck_min_move_m:
+            self._stuck_hits += 1
+        else:
+            self._stuck_hits = 0
+            return lin_x, lin_y, yaw_cmd
+
+        if self._stuck_hits < 2:
+            return lin_x, lin_y, yaw_cmd
+
+        # Recovery: clear current goal, back up, rotate toward open space.
+        self._stuck_hits = 0
+        self._current_path = []
+        yaw_mag = abs(self.explore_turn) if self.explore_turn != 0.0 else 0.6
+        yaw_sign = 1.0 if left_min >= right_min else -1.0
+        self._recovery_yaw = yaw_sign * yaw_mag
+        self._recovery_until = elapsed + random.uniform(1.5, 2.5)
+
+        back = -0.15 if front_min < self.explore_clear_distance else -0.10
+        return back, 0.0, self._recovery_yaw
 
     def _apply_scan_constraints(
         self,
@@ -600,11 +716,26 @@ class AutoPilot(Node):
         cos_o = math.cos(origin_yaw)
         sin_o = math.sin(origin_yaw)
 
+        breadth_first = bool(getattr(self, '_breadth_first', False))
+        arena_enabled = bool(getattr(self, '_arena_enabled', False))
+        arena_min_x = float(getattr(self, '_arena_min_x', -math.inf))
+        arena_max_x = float(getattr(self, '_arena_max_x', math.inf))
+        arena_min_y = float(getattr(self, '_arena_min_y', -math.inf))
+        arena_max_y = float(getattr(self, '_arena_max_y', math.inf))
+
         map_from_odom = self._transform_components(self.map_frame, self.odom_frame)
         if map_from_odom is None:
             return None
         map_tx, map_ty, map_yaw = map_from_odom
         robot_map_x, robot_map_y = self._apply_transform(map_tx, map_ty, map_yaw, self._pose_x, self._pose_y)
+
+        if arena_enabled and not (
+            arena_min_x <= robot_map_x <= arena_max_x and arena_min_y <= robot_map_y <= arena_max_y
+        ):
+            self.get_logger().warning(
+                'Robot pose is outside AP_EXP_ARENA_* bounds; disabling arena filter for this plan.'
+            )
+            arena_enabled = False
 
         dx0 = robot_map_x - origin_x
         dy0 = robot_map_y - origin_y
@@ -621,14 +752,37 @@ class AutoPilot(Node):
         unknown = bytearray(size)
         occupied = bytearray(size)
         free_thresh = int(self._free_thresh)
+        known_cells = 0
+        if arena_enabled:
+            arena_area = max(0.0, (arena_max_x - arena_min_x) * (arena_max_y - arena_min_y))
+            expected_total = max(1, int(round(arena_area / (res * res))))
+        else:
+            expected_total = max(1, size)
         for i in range(size):
+            if arena_enabled:
+                ix = i - (i // width) * width
+                iy = i // width
+                lx = (ix + 0.5) * res
+                ly = (iy + 0.5) * res
+                wx = origin_x + cos_o * lx - sin_o * ly
+                wy = origin_y + sin_o * lx + cos_o * ly
+                if not (
+                    arena_min_x <= wx <= arena_max_x and arena_min_y <= wy <= arena_max_y
+                ):
+                    # Treat outside-of-arena as a hard obstacle so we don't "chase" unknown
+                    # regions beyond the perimeter walls.
+                    occupied[i] = 1
+                    continue
+
             v = int(data[i])
             if v == -1:
                 unknown[i] = 1
             elif v <= free_thresh:
                 traversable[i] = 1
+                known_cells += 1
             else:
                 occupied[i] = 1
+                known_cells += 1
 
         # Inflate occupied cells to avoid hugging walls.
         inflated_obstacle = bytearray(occupied)
@@ -660,6 +814,41 @@ class AutoPilot(Node):
             return None
 
         neighbors4 = ((1, 0), (-1, 0), (0, 1), (0, -1))
+
+        # ------------------------------------------------------------------
+        # Coarse-to-fine thresholds (breadth-first exploration)
+        # ------------------------------------------------------------------
+        coverage = max(0.0, min(1.0, float(known_cells) / float(expected_total)))
+        # t = 0 early (coarse), 1 later (fine)
+        if breadth_first:
+            cov_lo = float(getattr(self, '_breadth_cov_lo', 0.0))
+            cov_hi = float(getattr(self, '_breadth_cov_hi', 1.0))
+            if cov_hi <= cov_lo:
+                t = 1.0
+            else:
+                t = (coverage - cov_lo) / (cov_hi - cov_lo)
+            t = max(0.0, min(1.0, t))
+            min_frontier_m = float(getattr(self, '_breadth_min_frontier_m_start', 0.0)) + (
+                float(getattr(self, '_breadth_min_frontier_m_end', 0.0))
+                - float(getattr(self, '_breadth_min_frontier_m_start', 0.0))
+            ) * t
+            min_cost_m = float(getattr(self, '_breadth_min_cost_m_start', 0.0)) + (
+                float(getattr(self, '_breadth_min_cost_m_end', 0.0))
+                - float(getattr(self, '_breadth_min_cost_m_start', 0.0))
+            ) * t
+        else:
+            t = 1.0
+            min_frontier_m = 0.0
+            min_cost_m = 0.0
+
+        if breadth_first and self._breadth_log_period > 0.0:
+            now_s = self.get_clock().now().nanoseconds * 1e-9
+            if now_s >= getattr(self, '_breadth_next_log', 0.0):
+                self._breadth_next_log = now_s + self._breadth_log_period
+                self.get_logger().info(
+                    f'Explore coverage={coverage * 100.0:.0f}% '
+                    f'min_frontier={min_frontier_m:.1f}m min_cost={min_cost_m:.1f}m'
+                )
 
         # Clearance transform: distance (cells) to nearest inflated obstacle.
         clearance_cells = [-1] * size
@@ -770,41 +959,84 @@ class AutoPilot(Node):
             wy = origin_y + sin_o * lx + cos_o * ly
             return wx, wy
 
-        # Score clusters (information gain vs travel cost).
-        scored: list[tuple[float, int]] = []
-        rep_gain: dict[int, int] = {}
         clearance_w = float(os.environ.get('AP_EXP_CLEARANCE_W', '6.0'))
-        clearance_min_m = float(os.environ.get('AP_EXP_CLEARANCE_MIN', '0.6'))
+        clearance_min_end = float(os.environ.get('AP_EXP_CLEARANCE_MIN', '0.6'))
+        clearance_min_start_raw = os.environ.get('AP_EXP_CLEARANCE_MIN_START')
+        if clearance_min_start_raw is not None and str(clearance_min_start_raw).strip():
+            try:
+                clearance_min_start = float(clearance_min_start_raw)
+            except ValueError:
+                clearance_min_start = clearance_min_end
+        else:
+            clearance_min_start = clearance_min_end
+        clearance_min_m = clearance_min_start + (clearance_min_end - clearance_min_start) * t
         clearance_penalty_w = float(os.environ.get('AP_EXP_CLEARANCE_PENALTY', '12.0'))
-        for cluster in clusters:
-            rep = min(cluster, key=lambda i: dist[i] if dist[i] >= 0 else 10**9)
-            if dist[rep] < 0:
-                continue
-            gain = float(len(cluster))
-            rep_gain[rep] = int(gain)
-            cost_m = dist[rep] * res
-            score = self._frontier_gain_w * gain - self._frontier_cost_w * cost_m
+        # Score clusters (information gain vs travel cost).
+        def _score_clusters(
+            min_frontier_len_m: float,
+            min_goal_cost_m: float,
+        ) -> tuple[list[tuple[float, int]], dict[int, int]]:
+            scored: list[tuple[float, int]] = []
+            rep_gain: dict[int, int] = {}
+            for cluster in clusters:
+                gain_cells = len(cluster)
+                gain = float(gain_cells)
+                if breadth_first and gain_cells * res < min_frontier_len_m:
+                    continue
 
-            # Prefer frontiers with more clearance (wide areas before narrow corridors).
-            if clearance_cells[rep] >= 0:
-                cluster_clear_cells = max(
-                    clearance_cells[i] for i in cluster if clearance_cells[i] >= 0
-                )
-                cluster_clear_m = cluster_clear_cells * res
-                score += clearance_w * cluster_clear_m
-                if cluster_clear_m < clearance_min_m:
-                    score -= clearance_penalty_w * (clearance_min_m - cluster_clear_m)
+                best_rep: Optional[int] = None
+                best_score = -1e18
+                best_rep_world: Optional[tuple[float, float]] = None
 
-            rep_world = cell_to_map_xy(rep)
-            if self._goal_history:
-                min_sep = min(
-                    math.hypot(rep_world[0] - gx, rep_world[1] - gy)
-                    for gx, gy in self._goal_history
-                )
-                if min_sep < self._goal_min_sep:
-                    score -= self._goal_repeat_penalty
+                # Pick a representative frontier cell that is reachable AND in a wide area.
+                for cand in cluster:
+                    if dist[cand] < 0:
+                        continue
+                    cost_m = dist[cand] * res
+                    if breadth_first and cost_m < min_goal_cost_m:
+                        continue
 
-            scored.append((score, rep))
+                    rep_world = cell_to_map_xy(cand)
+                    if arena_enabled and not (
+                        arena_min_x <= rep_world[0] <= arena_max_x
+                        and arena_min_y <= rep_world[1] <= arena_max_y
+                    ):
+                        continue
+
+                    clear_m = (clearance_cells[cand] * res) if clearance_cells[cand] >= 0 else 0.0
+                    score = self._frontier_gain_w * gain - self._frontier_cost_w * cost_m
+                    score += clearance_w * clear_m
+                    if clear_m < clearance_min_m:
+                        score -= clearance_penalty_w * (clearance_min_m - clear_m)
+
+                    if score > best_score:
+                        best_score = score
+                        best_rep = cand
+                        best_rep_world = rep_world
+
+                if best_rep is None or best_rep_world is None:
+                    continue
+
+                rep = best_rep
+                rep_gain[rep] = int(gain_cells)
+                score = best_score
+                rep_world = best_rep_world
+
+                if self._goal_history:
+                    min_sep = min(
+                        math.hypot(rep_world[0] - gx, rep_world[1] - gy)
+                        for gx, gy in self._goal_history
+                    )
+                    if min_sep < self._goal_min_sep:
+                        score -= self._goal_repeat_penalty
+
+                scored.append((score, rep))
+            return scored, rep_gain
+
+        scored, rep_gain = _score_clusters(min_frontier_m, min_cost_m)
+        if breadth_first and not scored and (min_frontier_m > 0.0 or min_cost_m > 0.0):
+            # Too strict early on; relax so we always have a target to keep exploring.
+            scored, rep_gain = _score_clusters(0.0, 0.0)
 
         if not scored:
             return None

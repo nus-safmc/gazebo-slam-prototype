@@ -13,7 +13,7 @@ bt_navigator:
     use_sim_time: true
     global_frame: robot/map
     robot_base_frame: robot/base_footprint
-    odom_topic: /odom
+    odom_topic: odom
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
@@ -27,12 +27,14 @@ bt_navigator:
 controller_server:
   ros__parameters:
     use_sim_time: true
-    controller_frequency: 15.0
+    controller_frequency: 20.0
     costmap_update_timeout: 0.30
     min_x_velocity_threshold: 0.001
     min_y_velocity_threshold: 0.001
     min_theta_velocity_threshold: 0.001
-    failure_tolerance: 0.2
+    # How long the controller may fail to produce a command before aborting.
+    # Too low causes rapid abort / recovery thrashing in cluttered starts.
+    failure_tolerance: 1.0
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -40,8 +42,8 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.3
-      movement_time_allowance: 6.0
+      required_movement_radius: 0.2
+      movement_time_allowance: 10.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -49,113 +51,85 @@ controller_server:
       yaw_goal_tolerance: 0.6
 
     FollowPath:
-      plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 56
-      model_dt: 0.05
-      batch_size: 1500
-      iteration_count: 1
-      prune_distance: 1.5
-      transform_tolerance: 0.15
+      # DWB is more robust than MPPI in this low-resolution ToF setup and avoids
+      # the persistent MPPI "Optimizer fail to compute path" loops.
+      plugin: "dwb_core::DWBLocalPlanner"
+      debug_trajectory_details: false
 
-      # Kinematic limits (holonomic)
-      motion_model: "Omni"
-      ax_max: 4.0
-      ax_min: -4.0
-      ay_max: 4.0
-      az_max: 4.0
-      vx_max: 1.2
-      vx_min: -0.5
-      vy_max: 0.8
-      wz_max: 1.6
+      # Velocity limits (holonomic)
+      min_vel_x: -0.15
+      max_vel_x: 0.25
+      min_vel_y: -0.20
+      max_vel_y: 0.20
+      max_vel_theta: 0.9
+      min_speed_xy: 0.0
+      max_speed_xy: 0.25
+      min_speed_theta: 0.0
 
-      # Noise / temperature
-      vx_std: 0.25
-      vy_std: 0.25
-      wz_std: 0.5
-      temperature: 0.3
-      gamma: 0.015
-      regenerate_noises: true
+      # Accel limits
+      acc_lim_x: 0.8
+      acc_lim_y: 0.8
+      acc_lim_theta: 1.2
+      decel_lim_x: -0.8
+      decel_lim_y: -0.8
+      decel_lim_theta: -1.2
 
-      # Disable visualization by default (can be enabled for debugging).
-      visualize: false
+      vx_samples: 15
+      vy_samples: 11
+      vtheta_samples: 20
+      sim_time: 2.0
+      linear_granularity: 0.05
+      angular_granularity: 0.025
+      transform_tolerance: 0.2
+      xy_goal_tolerance: 0.35
+      trans_stopped_velocity: 0.05
+      short_circuit_trajectory_evaluation: true
 
       critics: [
-        "ConstraintCritic", "CostCritic", "GoalCritic",
-        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
-        "PathAngleCritic", "PreferForwardCritic"]
-      ConstraintCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 4.0
-      GoalCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 5.0
-        threshold_to_consider: 1.4
-      GoalAngleCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 3.0
-        threshold_to_consider: 0.6
-      PreferForwardCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 2.5
-        threshold_to_consider: 0.4
-      CostCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 3.8
-        near_collision_cost: 253
-        critical_cost: 300.0
-        consider_footprint: true
-        collision_cost: 1000000.0
-        near_goal_distance: 1.0
-        trajectory_point_step: 2
-      PathAlignCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 10.0
-        max_path_occupancy_ratio: 0.05
-        trajectory_point_step: 4
-        threshold_to_consider: 0.5
-        offset_from_furthest: 20
-        use_path_orientations: false
-      PathFollowCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 5.0
-        offset_from_furthest: 5
-        threshold_to_consider: 1.2
-      PathAngleCritic:
-        enabled: true
-        cost_power: 1
-        cost_weight: 2.0
-        offset_from_furthest: 4
-        threshold_to_consider: 0.5
-        max_angle_to_furthest: 1.0
-        mode: 0
+        "RotateToGoal", "Oscillation", "BaseObstacle",
+        "GoalAlign", "PathAlign", "PathDist", "GoalDist"
+      ]
+      BaseObstacle.scale: 0.03
+      PathAlign.scale: 24.0
+      PathAlign.forward_point_distance: 0.325
+      GoalAlign.scale: 20.0
+      GoalAlign.forward_point_distance: 0.325
+      PathDist.scale: 32.0
+      GoalDist.scale: 24.0
+      RotateToGoal.scale: 32.0
+      RotateToGoal.slowing_factor: 5.0
+      RotateToGoal.lookahead_time: -1.0
+      Oscillation.scale: 1.0
 
 local_costmap:
   local_costmap:
     ros__parameters:
       use_sim_time: true
-      update_frequency: 10.0
-      publish_frequency: 5.0
+      update_frequency: 8.0
+      publish_frequency: 4.0
       global_frame: robot/odom
       robot_base_frame: robot/base_footprint
       rolling_window: true
-      width: 5.0
-      height: 5.0
+      width: 7
+      height: 7
       resolution: 0.10
-      robot_radius: 0.14
-      plugins: ["obstacle_layer", "inflation_layer"]
+      robot_radius: 0.20
+      # Include the fused global /map as a static layer so the controller also
+      # respects the perimeter keepout band (otherwise it can drive into the
+      # keepout and Nav2 will get stuck with "Start occupied").
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map
+        subscribe_to_updates: true
+        map_subscribe_transient_local: True
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
+        footprint_clearing_enabled: True
         observation_sources: scan
         scan:
-          topic: /scan_merged
+          topic: scan_merged
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -166,31 +140,36 @@ local_costmap:
           obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.55
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
+        cost_scaling_factor: 2.5
+        inflation_radius: 0.85
       always_send_full_costmap: True
 
 global_costmap:
   global_costmap:
     ros__parameters:
       use_sim_time: true
-      update_frequency: 2.0
-      publish_frequency: 1.0
+      update_frequency: 1.0
+      publish_frequency: 0.5
       global_frame: robot/map
       robot_base_frame: robot/base_footprint
-      robot_radius: 0.14
+      robot_radius: 0.20
       resolution: 0.10
       track_unknown_space: true
+      # Combine the fused global /map with each robot's live scan so planners
+      # don't route through newly-seen obstacles (which causes MPPI failures).
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_topic: /map
+        subscribe_to_updates: true
+        map_subscribe_transient_local: True
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
+        footprint_clearing_enabled: True
         observation_sources: scan
         scan:
-          topic: /scan_merged
+          topic: scan_merged
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -199,13 +178,10 @@ global_costmap:
           raytrace_min_range: 0.0
           obstacle_max_range: 5.5
           obstacle_min_range: 0.0
-      static_layer:
-        plugin: "nav2_costmap_2d::StaticLayer"
-        map_subscribe_transient_local: True
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.75
+        cost_scaling_factor: 2.5
+        inflation_radius: 1.05
       always_send_full_costmap: True
 
 planner_server:
@@ -215,10 +191,12 @@ planner_server:
     planner_plugins: ["GridBased"]
     costmap_update_timeout: 1.0
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
+      plugin: "nav2_smac_planner::SmacPlanner2D"
       tolerance: 0.35
-      use_astar: true
       allow_unknown: true
+      downsample_costmap: false
+      max_iterations: 50000
+      max_on_approach_iterations: 1000
 
 smoother_server:
   ros__parameters:
@@ -276,11 +254,11 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [1.2, 0.8, 1.6]
-    min_velocity: [-0.5, -0.8, -1.6]
-    max_accel: [4.0, 4.0, 4.0]
-    max_decel: [-4.0, -4.0, -4.0]
-    odom_topic: /odom
+    max_velocity: [0.3, 0.25, 0.9]
+    min_velocity: [-0.15, -0.25, -0.9]
+    max_accel: [0.8, 0.8, 1.2]
+    max_decel: [-0.8, -0.8, -1.2]
+    odom_topic: odom
     odom_duration: 0.15
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0
@@ -297,20 +275,32 @@ collision_monitor:
     source_timeout: 1.0
     base_shift_correction: True
     stop_pub_timeout: 2.0
+    # Use a predictive approach polygon; a hard StopZone tended to freeze robots
+    # in cluttered starts and prevented multi-robot motion.
     polygons: ["FootprintApproach"]
+    # Hard safety zone for near-field obstacles (walls/props/other robots).
+    StopZone:
+      type: "polygon"
+      # Square around base_footprint in meters.
+      # Keep this tight; too-large stop zones cause robots to freeze near normal obstacles.
+      points: "[[0.28, 0.28], [0.28, -0.28], [-0.28, -0.28], [-0.28, 0.28]]"
+      action_type: "stop"
+      min_points: 4
+      visualize: False
+      enabled: False
     FootprintApproach:
       type: "polygon"
       action_type: "approach"
-      footprint_topic: "/local_costmap/published_footprint"
-      time_before_collision: 1.4
-      simulation_time_step: 0.1
+      footprint_topic: "local_costmap/published_footprint"
+      time_before_collision: 4.0
+      simulation_time_step: 0.05
       min_points: 6
       visualize: False
       enabled: True
     observation_sources: ["scan"]
     scan:
       type: "scan"
-      topic: "/scan_merged"
+      topic: "scan_merged"
       enabled: True
 
 docking_server:

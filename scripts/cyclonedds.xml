@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!--
+  CycloneDDS configuration for this repo.
+
+  Nav2 + multi-robot simulation spawns many ROS processes. CycloneDDS defaults
+  to auto-assigning a participant index from a limited range; when exhausted,
+  ROS nodes fail to start with:
+    "Failed to find a free participant index for domain 0"
+
+  Bump the range so repeated launches and multi-robot stacks don't hit it.
+-->
+<CycloneDDS>
+  <Domain id="any">
+    <Discovery>
+      <ParticipantIndex>auto</ParticipantIndex>
+      <MaxAutoParticipantIndex>256</MaxAutoParticipantIndex>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
