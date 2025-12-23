@@ -121,11 +121,40 @@ def _make_bridge_node(context, *, use_sim_time):
     ]
 
 
+def _make_gz_processes(context):
+    world_value = str(LaunchConfiguration('world').perform(context)).strip()
+    world_value = os.path.expanduser(world_value)
+
+    if os.path.isabs(world_value) or '/' in world_value:
+        world_path = world_value
+    else:
+        pkg_share_path = FindPackageShare('tof_slam_sim').perform(context)
+        world_path = os.path.join(pkg_share_path, 'worlds', world_value)
+
+    if platform.system() == 'Darwin':
+        return [
+            ExecuteProcess(
+                cmd=['gz', 'sim', '-s', '-r', world_path],
+                output='screen',
+            ),
+            ExecuteProcess(
+                cmd=['gz', 'sim', '-g'],
+                output='screen',
+            ),
+        ]
+
+    return [
+        ExecuteProcess(
+            cmd=['gz', 'sim', '-r', world_path],
+            output='screen',
+        )
+    ]
+
+
 def generate_launch_description() -> LaunchDescription:
     pkg_share = FindPackageShare('tof_slam_sim')
     use_sim_time = LaunchConfiguration('use_sim_time')
     world = LaunchConfiguration('world')
-    world_path = PathJoinSubstitution([pkg_share, 'worlds', world])
     log_monitor_path = PathJoinSubstitution([pkg_share, 'scripts', 'log_monitor.py'])
 
     sensors = [
@@ -228,28 +257,7 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     )
 
-    is_macos = platform.system() == 'Darwin'
-    gz_processes: list[ExecuteProcess] = []
-    if is_macos:
-        gz_processes.append(
-            ExecuteProcess(
-                cmd=['gz', 'sim', '-s', '-r', world_path],
-                output='screen',
-            )
-        )
-        gz_processes.append(
-            ExecuteProcess(
-                cmd=['gz', 'sim', '-g'],
-                output='screen',
-            )
-        )
-    else:
-        gz_processes.append(
-            ExecuteProcess(
-                cmd=['gz', 'sim', '-r', world_path],
-                output='screen',
-            )
-        )
+    gz_processes = OpaqueFunction(function=_make_gz_processes)
 
     bridge_node = OpaqueFunction(
         function=_make_bridge_node,
@@ -338,8 +346,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(set_ros_log_dir)
     ld.add_action(make_log_dir)
 
-    for action in gz_processes:
-        ld.add_action(action)
+    ld.add_action(gz_processes)
 
     ld.add_action(bridge_node)
     ld.add_action(scan_merger)
