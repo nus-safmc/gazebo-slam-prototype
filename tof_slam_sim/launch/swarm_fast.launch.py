@@ -68,8 +68,8 @@ def _nav2_actions(context):
 
     if run_autopilot:
         # Use the repo's exploration autopilot (one per robot) instead of Nav2.
-        lo = -8.4
-        hi = 8.4
+        lo = -18.4
+        hi = 18.4
         mid = 0.0
         overlap = 0.6
         quadrants = {
@@ -133,8 +133,8 @@ def _nav2_actions(context):
     # Split arena into 4 overlapping quadrants so robots spread out instead of chasing the same frontier.
     # Keep a margin from the perimeter walls / keepout band so Nav2 doesn't end up with a
     # "start occupied" condition when a robot gets too close to the border.
-    lo = -8.4
-    hi = 8.4
+    lo = -18.4
+    hi = 18.4
     mid = 0.0
     overlap = 0.6
     quadrants = {
@@ -329,14 +329,14 @@ def generate_launch_description() -> LaunchDescription:
                 '/robot4/scan_merged',
             ],
             'resolution': 0.05,
-            'min_x': -10.0,
-            'max_x': 10.0,
-            'min_y': -10.0,
-            'max_y': 10.0,
+            'min_x': -20.0,
+            'max_x': 20.0,
+            'min_y': -20.0,
+            'max_y': 20.0,
             # Seed an occupied border so robots keep a safety buffer from the perimeter walls.
             # This is enforced in both global + local costmaps via the shared `/map` static layer.
             'seed_keepout': True,
-            # Match the explorer arena bounds (±8.4m) so Nav2 won't route along the outer wall band.
+            # Match the explorer arena bounds (±18.4m) so Nav2 won't route along the outer wall band.
             'keepout_margin_m': 1.6,
             'publish_period_sec': 0.5,
         }],

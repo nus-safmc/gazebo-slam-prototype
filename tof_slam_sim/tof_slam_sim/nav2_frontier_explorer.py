@@ -91,10 +91,10 @@ class Nav2FrontierExplorer(Node):
 
         # Hard arena bounds (map frame) to prevent "chasing" unknown space outside perimeter walls.
         self.arena_enabled = bool(self.declare_parameter('arena_enabled', True).value)
-        self.arena_min_x = float(self.declare_parameter('arena_min_x', -9.4).value)
-        self.arena_max_x = float(self.declare_parameter('arena_max_x', 9.4).value)
-        self.arena_min_y = float(self.declare_parameter('arena_min_y', -9.4).value)
-        self.arena_max_y = float(self.declare_parameter('arena_max_y', 9.4).value)
+        self.arena_min_x = float(self.declare_parameter('arena_min_x', -19.4).value)
+        self.arena_max_x = float(self.declare_parameter('arena_max_x', 19.4).value)
+        self.arena_min_y = float(self.declare_parameter('arena_min_y', -19.4).value)
+        self.arena_max_y = float(self.declare_parameter('arena_max_y', 19.4).value)
 
         # Breadth-first (coarse-to-fine) exploration thresholds.
         self.breadth_first = bool(self.declare_parameter('breadth_first', True).value)

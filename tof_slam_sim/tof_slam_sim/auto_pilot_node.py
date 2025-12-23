@@ -130,16 +130,16 @@ class AutoPilot(Node):
             self._waypoint_reached_m = float(os.environ.get('AP_EXP_WP_REACHED_M', '0.4'))
             self._planner = os.environ.get('AP_EXP_PLANNER', 'frontier').lower()
 
-            # Arena bounds (map frame). Defaults match the 20m×20m playfield with margin.
+            # Arena bounds (map frame). Defaults match the 40m×40m playfield with margin.
             self._arena_enabled = os.environ.get('AP_EXP_ARENA_ENABLE', '1').lower() in (
                 '1',
                 'true',
                 'yes',
             )
-            self._arena_min_x = float(os.environ.get('AP_EXP_ARENA_MIN_X', '-9.4'))
-            self._arena_max_x = float(os.environ.get('AP_EXP_ARENA_MAX_X', '9.4'))
-            self._arena_min_y = float(os.environ.get('AP_EXP_ARENA_MIN_Y', '-9.4'))
-            self._arena_max_y = float(os.environ.get('AP_EXP_ARENA_MAX_Y', '9.4'))
+            self._arena_min_x = float(os.environ.get('AP_EXP_ARENA_MIN_X', '-19.4'))
+            self._arena_max_x = float(os.environ.get('AP_EXP_ARENA_MAX_X', '19.4'))
+            self._arena_min_y = float(os.environ.get('AP_EXP_ARENA_MIN_Y', '-19.4'))
+            self._arena_max_y = float(os.environ.get('AP_EXP_ARENA_MAX_Y', '19.4'))
 
             # Breadth-first (coarse-to-fine) exploration: ignore tiny frontier "holes" early
             # and prefer larger moves; relax constraints as map coverage increases.
