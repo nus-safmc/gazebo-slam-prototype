@@ -458,7 +458,23 @@ def _build_swarm(context):
         condition=rviz_enabled,
     )
 
-    return [sim_launch, swarm_tf, *scan_mergers, fuser, nav2_and_exploration, rviz]
+    health_dashboard = Node(
+        package='tof_slam_sim',
+        executable='drone_health_dashboard',
+        name='drone_health_dashboard',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'robots': robots,
+            'map_frame': 'robot/map',
+            'ui': LaunchConfiguration('health_ui'),
+            'publish_markers': LaunchConfiguration('publish_drone_markers'),
+            'marker_topic': '/swarm/drone_markers',
+            'pose_topic': '/swarm/drone_poses',
+        }],
+    )
+
+    return [sim_launch, swarm_tf, *scan_mergers, fuser, nav2_and_exploration, rviz, health_dashboard]
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -507,6 +523,16 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Launch RViz.',
     )
+    declare_health_ui = DeclareLaunchArgument(
+        'health_ui',
+        default_value='true',
+        description='Show runtime drone health UI (tkinter).',
+    )
+    declare_publish_drone_markers = DeclareLaunchArgument(
+        'publish_drone_markers',
+        default_value='true',
+        description='Publish drone pose markers for RViz (/swarm/drone_markers).',
+    )
 
     declare_stub_autopilot = DeclareLaunchArgument(
         'run_autopilot',
@@ -527,6 +553,8 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(declare_run_explorer)
     ld.add_action(declare_nav2_params)
     ld.add_action(declare_rviz)
+    ld.add_action(declare_health_ui)
+    ld.add_action(declare_publish_drone_markers)
     ld.add_action(declare_stub_autopilot)
     ld.add_action(maybe_spawn_ui)
     ld.add_action(build_swarm)
