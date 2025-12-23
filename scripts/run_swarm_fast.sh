@@ -26,6 +26,15 @@ while [[ $# -gt 0 ]]; do
     shift
     continue
   fi
+  if [[ "$a" == "--num-drones" ]]; then
+    if [[ $# -lt 1 ]]; then
+      echo "error: $a requires an integer" >&2
+      exit 2
+    fi
+    N_ROBOTS="$1"
+    shift
+    continue
+  fi
   if [[ "$a" == "--robots" ]]; then
     if [[ $# -lt 1 ]]; then
       echo "error: --robots requires a comma-separated list" >&2
@@ -52,13 +61,11 @@ elif [[ -n "$N_ROBOTS" ]]; then
     echo "error: --n must be >= 1" >&2
     exit 2
   fi
-  ROBOTS="robot"
-  if [[ "$N_ROBOTS" -ge 2 ]]; then
-    for ((i=2; i<=N_ROBOTS; i++)); do
-      ROBOTS+=",robot${i}"
-    done
+  if [[ "$N_ROBOTS" -gt 15 ]]; then
+    echo "error: --n must be <= 15 (got '$N_ROBOTS')" >&2
+    exit 2
   fi
-  ROBOTS_ARG=("robots:=$ROBOTS")
+  ROBOTS_ARG=("num_robots:=$N_ROBOTS")
 fi
 
 if [[ "$DEFAULT_SPAWN" -eq 1 ]]; then

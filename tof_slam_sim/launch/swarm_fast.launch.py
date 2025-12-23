@@ -41,6 +41,17 @@ def _truthy(value: object) -> bool:
 
 
 def _parse_robots(context) -> list[str]:
+    num_raw = str(LaunchConfiguration('num_robots').perform(context)).strip()
+    if num_raw:
+        try:
+            n = int(num_raw)
+        except ValueError:
+            n = 0
+        if n >= 1:
+            n = min(n, 15)
+            robots = ['robot'] + [f'robot{i}' for i in range(2, n + 1)]
+            return robots
+
     raw = str(LaunchConfiguration('robots').perform(context)).strip()
     if not raw:
         return ['robot']
@@ -53,6 +64,7 @@ def _parse_robots(context) -> list[str]:
             continue
         seen.add(r)
         out.append(r)
+    out = out[:15]
     return out or ['robot']
 
 
@@ -262,9 +274,6 @@ def _nav2_actions(context):
 
 
 def _maybe_select_spawns(context):
-    if _truthy(LaunchConfiguration('default_spawn').perform(context)):
-        return []
-
     world_arg = str(LaunchConfiguration('world').perform(context)).strip()
     if not world_arg:
         return []
@@ -276,12 +285,54 @@ def _maybe_select_spawns(context):
             get_package_share_directory('tof_slam_sim'), 'worlds', world_arg
         )
 
-    robots = _parse_robots(context)
-
     try:
-        from tof_slam_sim.spawn_selector import select_spawn_points, write_world_with_robot_spawns
+        from tof_slam_sim.spawn_selector import (
+            Bounds,
+            default_spawn_spots,
+            extract_robot_includes,
+            select_spawn_points,
+            write_world_with_robot_spawns,
+        )
     except Exception:
         return []
+
+    robots = _parse_robots(context)
+    robots = robots[:15]
+
+    default_mode = _truthy(LaunchConfiguration('default_spawn').perform(context))
+
+    # Always build a temp world if we need to spawn robots not already present
+    # in the base world; otherwise leave the world untouched (keeps existing defaults).
+    existing = extract_robot_includes(world_sdf_path=base_world)
+    needs_temp_world = any(r not in existing for r in robots) or any(
+        name.startswith('robot') and name not in set(robots) for name in existing.keys()
+    )
+
+    if default_mode:
+        if not needs_temp_world:
+            return []
+        # Fill missing robots using the first available spawn spots.
+        spots = default_spawn_spots(bounds=Bounds(-20.0, 20.0, -20.0, 20.0), margin_m=4.0)
+        used_xy = {(xy[0], xy[1]) for _uri, xy in existing.values()}
+        spawns: dict[str, tuple[float, float, float]] = {}
+        for r in robots:
+            if r in existing:
+                _uri, (x, y, yaw) = existing[r]
+                spawns[r] = (x, y, yaw)
+                continue
+            spot = next((s for s in spots if (s.x, s.y) not in used_xy), None)
+            if spot is None:
+                spot = spots[0]
+            used_xy.add((spot.x, spot.y))
+            spawns[r] = (spot.x, spot.y, spot.yaw)
+
+        out_world = write_world_with_robot_spawns(
+            base_world_sdf_path=base_world,
+            robots=robots,
+            spawns=spawns,
+            z_m=0.05,
+        )
+        return [SetLaunchConfiguration('world', out_world)]
 
     try:
         spawns = select_spawn_points(world_sdf_path=base_world, robots=robots)
@@ -289,7 +340,20 @@ def _maybe_select_spawns(context):
         spawns = None
 
     if not spawns:
-        return []
+        # UI canceled: fall back to default (keeps existing spawns where present).
+        spots = default_spawn_spots(bounds=Bounds(-20.0, 20.0, -20.0, 20.0), margin_m=4.0)
+        used_xy = {(xy[0], xy[1]) for _uri, xy in existing.values()}
+        spawns = {}
+        for r in robots:
+            if r in existing:
+                _uri, (x, y, yaw) = existing[r]
+                spawns[r] = (x, y, yaw)
+                continue
+            spot = next((s for s in spots if (s.x, s.y) not in used_xy), None)
+            if spot is None:
+                spot = spots[0]
+            used_xy.add((spot.x, spot.y))
+            spawns[r] = (spot.x, spot.y, spot.yaw)
 
     out_world = write_world_with_robot_spawns(
         base_world_sdf_path=base_world,
@@ -408,6 +472,11 @@ def generate_launch_description() -> LaunchDescription:
         default_value='playfield_swarm.sdf',
         description='World file (SDF) under tof_slam_sim/worlds.',
     )
+    declare_num_robots = DeclareLaunchArgument(
+        'num_robots',
+        default_value='',
+        description='If set (>=1), auto-generate robot,robot2..robotN and ignore `robots`.',
+    )
     declare_robots = DeclareLaunchArgument(
         'robots',
         default_value='robot,robot2,robot3,robot4',
@@ -451,6 +520,7 @@ def generate_launch_description() -> LaunchDescription:
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
     ld.add_action(declare_world)
+    ld.add_action(declare_num_robots)
     ld.add_action(declare_robots)
     ld.add_action(declare_default_spawn)
     ld.add_action(declare_run_nav2)

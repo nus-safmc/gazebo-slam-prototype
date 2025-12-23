@@ -33,6 +33,41 @@ class Circle2D:
     r: float
 
 
+@dataclass(frozen=True)
+class SpawnSpot:
+    spot_id: int
+    x: float
+    y: float
+    yaw: float = 0.0
+
+
+def default_spawn_spots(*, bounds: Bounds, margin_m: float = 4.0) -> list[SpawnSpot]:
+    """Return 15 fixed spawn spots distributed across the arena."""
+    span_x = max(1e-6, bounds.max_x - bounds.min_x)
+    span_y = max(1e-6, bounds.max_y - bounds.min_y)
+    usable_min_x = bounds.min_x + min(margin_m, 0.45 * span_x)
+    usable_max_x = bounds.max_x - min(margin_m, 0.45 * span_x)
+    usable_min_y = bounds.min_y + min(margin_m, 0.45 * span_y)
+    usable_max_y = bounds.max_y - min(margin_m, 0.45 * span_y)
+
+    xs = [
+        usable_min_x,
+        usable_min_x + 0.25 * (usable_max_x - usable_min_x),
+        0.5 * (usable_min_x + usable_max_x),
+        usable_min_x + 0.75 * (usable_max_x - usable_min_x),
+        usable_max_x,
+    ]
+    ys = [usable_min_y, 0.5 * (usable_min_y + usable_max_y), usable_max_y]
+
+    out: list[SpawnSpot] = []
+    spot = 1
+    for y in ys:
+        for x in xs:
+            out.append(SpawnSpot(spot_id=spot, x=float(x), y=float(y), yaw=0.0))
+            spot += 1
+    return out
+
+
 def _parse_pose(text: Optional[str]) -> tuple[float, float, float, float, float, float]:
     if not text:
         return 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
@@ -128,6 +163,7 @@ def select_spawn_points(
     world_sdf_path: str,
     robots: list[str],
     title: str = "Spawn drones: click to place each robot",
+    spots: Optional[list[SpawnSpot]] = None,
 ) -> Optional[dict[str, tuple[float, float, float]]]:
     """Blocking UI: returns {robot: (x, y, yaw)} or None if canceled."""
     try:
@@ -137,6 +173,7 @@ def select_spawn_points(
         return None
 
     boxes, circles, bounds = _extract_obstacles_and_bounds(world_sdf_path=world_sdf_path)
+    _ = spots  # kept for backward compatibility; UI now allows free placement.
 
     w_px = 800
     h_px = 800
@@ -208,6 +245,43 @@ def select_spawn_points(
     result: list[Optional[dict[str, tuple[float, float, float]]]] = [None]
     selected: dict[str, tuple[float, float, float]] = {}
     order_idx = 0
+
+    # Placement safety margins.
+    spawn_clearance_m = float(os.environ.get("SPAWN_CLEARANCE_M", "0.45"))
+    spawn_min_separation_m = float(os.environ.get("SPAWN_MIN_SEPARATION_M", "0.85"))
+    spawn_bounds_margin_m = float(os.environ.get("SPAWN_BOUNDS_MARGIN_M", "0.40"))
+
+    def _point_in_box(wx: float, wy: float, b: Box2D, margin: float) -> bool:
+        dx = wx - b.cx
+        dy = wy - b.cy
+        c = math.cos(b.yaw)
+        s = math.sin(b.yaw)
+        lx = c * dx + s * dy
+        ly = -s * dx + c * dy
+        return abs(lx) <= 0.5 * b.sx + margin and abs(ly) <= 0.5 * b.sy + margin
+
+    def _point_in_circle(wx: float, wy: float, c_: Circle2D, margin: float) -> bool:
+        return math.hypot(wx - c_.cx, wy - c_.cy) <= c_.r + margin
+
+    def _is_valid_spawn(wx: float, wy: float) -> tuple[bool, str]:
+        if not (
+            bounds.min_x + spawn_bounds_margin_m <= wx <= bounds.max_x - spawn_bounds_margin_m
+            and bounds.min_y + spawn_bounds_margin_m <= wy <= bounds.max_y - spawn_bounds_margin_m
+        ):
+            return False, "Outside arena bounds"
+
+        for b in boxes:
+            if _point_in_box(wx, wy, b, spawn_clearance_m):
+                return False, "Too close to obstacle"
+        for c_ in circles:
+            if _point_in_circle(wx, wy, c_, spawn_clearance_m):
+                return False, "Too close to obstacle"
+
+        for _r, (sx, sy, _syaw) in selected.items():
+            if math.hypot(wx - sx, wy - sy) < spawn_min_separation_m:
+                return False, "Too close to another robot"
+
+        return True, ""
 
     def redraw() -> None:
         canvas.delete("all")
@@ -287,10 +361,12 @@ def select_spawn_points(
         if order_idx >= len(robots):
             return
         wx, wy = px_to_world(event.x, event.y)
-        if not (bounds.min_x <= wx <= bounds.max_x and bounds.min_y <= wy <= bounds.max_y):
+        ok, reason = _is_valid_spawn(wx, wy)
+        if not ok:
+            status_var.set(f"Invalid spawn: {reason}")
             return
         r = robots[order_idx]
-        selected[r] = (wx, wy, 0.0)
+        selected[r] = (float(wx), float(wy), 0.0)
         order_idx += 1
         redraw()
 
@@ -355,9 +431,9 @@ def write_world_with_robot_spawns(
         if robot.startswith("robot"):
             suffix = robot.replace("robot", "", 1)
             if suffix.isdigit():
-                # Models exist for 2..4; fall back to base model otherwise.
+                # Models exist for 2..15; fall back to base model otherwise.
                 n = int(suffix)
-                if 2 <= n <= 4:
+                if 2 <= n <= 15:
                     return f"model://rex_quadcopter_{n}"
                 return "model://rex_quadcopter"
         return "model://rex_quadcopter"
@@ -402,3 +478,27 @@ def write_world_with_robot_spawns(
     )
     tree.write(out_path, encoding="utf-8", xml_declaration=True)
     return out_path
+
+
+def extract_robot_includes(
+    *,
+    world_sdf_path: str,
+) -> dict[str, tuple[str, tuple[float, float, float]]]:
+    """Return {name: (uri, (x,y,yaw))} for drone-like includes in a world SDF."""
+    tree = ET.parse(world_sdf_path)
+    root = tree.getroot()
+    world = root.find("world") or root.find(".//world")
+    if world is None:
+        return {}
+
+    out: dict[str, tuple[str, tuple[float, float, float]]] = {}
+    for inc in world.findall("include"):
+        name = (inc.findtext("name") or "").strip()
+        if not name:
+            continue
+        uri = (inc.findtext("uri") or "").strip()
+        if not uri.startswith("model://rex_quadcopter"):
+            continue
+        px, py, _pz, _r, _p, yaw = _parse_pose((inc.findtext("pose") or "").strip())
+        out[name] = (uri, (px, py, yaw))
+    return out
