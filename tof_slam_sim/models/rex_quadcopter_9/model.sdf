@@ -1,0 +1,347 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="rex_quadcopter_9">
+    <static>false</static>
+
+    <!-- Main body link -->
+    <link name="base_link">
+      <pose>0 0 0.15 0 0 0</pose>
+
+      <inertial>
+        <mass>0.3</mass>
+        <inertia>
+          <ixx>0.001</ixx>
+          <iyy>0.001</iyy>
+          <izz>0.002</izz>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyz>0</iyz>
+        </inertia>
+      </inertial>
+
+      <!-- Disable gravity on the link (re-enable when you add rotors) -->
+      <gravity>false</gravity>
+
+      <!-- Add damping so the "hovering" robot doesn't drift forever after cmd_vel goes to zero. -->
+      <velocity_decay>
+        <linear>1.0</linear>
+        <angular>1.0</angular>
+      </velocity_decay>
+
+      <!-- Simple collision box -->
+      <collision name="body_collision">
+        <geometry>
+          <box>
+            <size>0.15 0.15 0.05</size>
+          </box>
+        </geometry>
+      </collision>
+
+      <!-- ===================== FRAME (dual plates) ===================== -->
+      <visual name="frame_top">
+        <pose>0 0 0.020 0 0 0</pose>
+        <geometry><box><size>0.18 0.18 0.004</size></box></geometry>
+        <material>
+          <ambient>0.65 0.55 0.45 1</ambient>
+          <diffuse>0.75 0.60 0.50 1</diffuse>
+          <specular>0.05 0.05 0.05 1</specular>
+        </material>
+      </visual>
+      <visual name="frame_bottom">
+        <pose>0 0 -0.020 0 0 0</pose>
+        <geometry><box><size>0.18 0.18 0.004</size></box></geometry>
+        <material>
+          <ambient>0.55 0.45 0.35 1</ambient>
+          <diffuse>0.65 0.50 0.40 1</diffuse>
+          <specular>0.05 0.05 0.05 1</specular>
+        </material>
+      </visual>
+
+      <!-- ===================== ARMS (slim bars) ===================== -->
+      <visual name="arm_front">
+        <pose>0.09 0 0 0 0 0</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
+      </visual>
+      <visual name="arm_back">
+        <pose>-0.09 0 0 0 0 0</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
+      </visual>
+      <visual name="arm_left">
+        <pose>0 0.09 0 0 0 1.5708</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
+      </visual>
+      <visual name="arm_right">
+        <pose>0 -0.09 0 0 0 1.5708</pose>
+        <geometry><box><size>0.10 0.012 0.006</size></box></geometry>
+      </visual>
+
+      <!-- ===================== ELECTRONICS STACK ===================== -->
+      <visual name="electronics_stack">
+        <pose>0 0 0.00 0 0 0</pose>
+        <geometry><box><size>0.06 0.06 0.03</size></box></geometry>
+        <material>
+          <ambient>0.08 0.10 0.10 1</ambient>
+          <diffuse>0.10 0.15 0.15 1</diffuse>
+          <specular>0.02 0.02 0.02 1</specular>
+        </material>
+      </visual>
+
+      <!-- ===================== BATTERY ===================== -->
+      <visual name="battery">
+        <pose>0 0 -0.040 0 0 0</pose>
+        <geometry><box><size>0.09 0.04 0.03</size></box></geometry>
+        <material>
+          <ambient>0.10 0.10 0.10 1</ambient>
+          <diffuse>0.15 0.15 0.15 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ===================== CAMERA / SENSOR POD ===================== -->
+      <visual name="sensor_pod">
+        <pose>0.07 0 0.01 0 0 0</pose>
+        <geometry><box><size>0.04 0.03 0.02</size></box></geometry>
+        <material>
+          <ambient>0.08 0.08 0.08 1</ambient>
+          <diffuse>0.12 0.12 0.12 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ===================== PROPELLER GUARDS (thin rings) ===================== -->
+      <visual name="guard_fr">
+        <pose> 0.095 0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+      <visual name="guard_fl">
+        <pose>-0.095 0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+      <visual name="guard_br">
+        <pose> 0.095 -0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+      <visual name="guard_bl">
+        <pose>-0.095 -0.095 0.020 0 0 0</pose>
+        <geometry><cylinder><radius>0.060</radius><length>0.002</length></cylinder></geometry>
+      </visual>
+
+      <!-- ===================== PROPELLERS (flat disks) ===================== -->
+      <visual name="prop_fr">
+        <pose> 0.095 0.095 0.022 0 0 0</pose>
+        <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
+      </visual>
+      <visual name="prop_fl">
+        <pose>-0.095 0.095 0.022 0 0 0</pose>
+        <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
+      </visual>
+      <visual name="prop_br">
+        <pose> 0.095 -0.095 0.022 0 0 0</pose>
+        <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
+      </visual>
+      <visual name="prop_bl">
+        <pose>-0.095 -0.095 0.022 0 0 0</pose>
+        <geometry><cylinder><radius>0.050</radius><length>0.0015</length></cylinder></geometry>
+      </visual>
+
+      <!-- ===================== BLUE STATUS LED ===================== -->
+      <visual name="status_led">
+        <pose>0 0 -0.018 0 0 0</pose>
+        <geometry><sphere><radius>0.006</radius></sphere></geometry>
+      </visual>
+
+      <!-- ===================== 8 RAY-BASED RANGE SENSORS ===================== -->
+      <!-- Simple laser beams publishing LaserScan messages for debugging. -->
+      <sensor name="tof_front" type="gpu_lidar">
+        <pose>0.12 0 0 0 0 0</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_front_right" type="gpu_lidar">
+        <pose>0.085 0.085 0 0 0 0.7853981634</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_right" type="gpu_lidar">
+        <pose>0 0.12 0 0 0 1.5707963268</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_back_right" type="gpu_lidar">
+        <pose>-0.085 0.085 0 0 0 2.3561944902</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_back" type="gpu_lidar">
+        <pose>-0.12 0 0 0 0 3.1415926536</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_back_left" type="gpu_lidar">
+        <pose>-0.085 -0.085 0 0 0 -2.3561944902</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_left" type="gpu_lidar">
+        <pose>0 -0.12 0 0 0 -1.5707963268</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+      <sensor name="tof_front_left" type="gpu_lidar">
+        <pose>0.085 -0.085 0 0 0 -0.7853981634</pose>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>8</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.5235987756</min_angle>
+              <max_angle>0.5235987756</max_angle>
+            </horizontal>
+          </scan>
+          <range>
+            <min>0.05</min>
+            <max>6.0</max>
+            <resolution>0.001</resolution>
+          </range>
+        </lidar>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+      </sensor>
+
+    </link>
+
+    <!-- Velocity control and odometry plugins -->
+    <plugin name="gz::sim::systems::VelocityControl" filename="gz-sim-velocity-control-system">
+      <topic>/cmd_vel_robot9</topic>
+      <use_world_frame>false</use_world_frame>
+      <max_linear_velocity>3</max_linear_velocity>
+      <max_angular_velocity>2</max_angular_velocity>
+    </plugin>
+
+    <plugin name="gz::sim::systems::OdometryPublisher" filename="gz-sim-odometry-publisher-system">
+      <topic>/odom</topic>
+      <frame_id>robot9/odom</frame_id>
+      <child_frame_id>robot9/base_link</child_frame_id>
+      <publish_tf>true</publish_tf>
+    </plugin>
+
+  </model>
+</sdf>

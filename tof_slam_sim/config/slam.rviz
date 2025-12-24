@@ -103,6 +103,14 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
+    - Class: rviz_default_plugins/MarkerArray
+      Enabled: true
+      Name: DroneMarkers
+      Namespaces:
+        {}
+      Queue Size: 100
+      Topic: /swarm/drone_markers
+      Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48

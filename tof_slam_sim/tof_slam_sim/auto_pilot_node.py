@@ -70,6 +70,10 @@ class AutoPilot(Node):
         self._path_replan_period = float(os.environ.get('AP_EXP_REPLAN_SEC', '2.5'))
         self._path_last_plan = 0.0
         self._sensor_range = 0.0
+        self._crash_stop = os.environ.get('AP_CRASH_STOP', '1').strip().lower() in ('1', 'true', 'yes', 'on')
+        self._crash_contact_m = float(os.environ.get('AP_CRASH_CONTACT_M', '0.14'))
+        self._crashed = False
+        self._crash_logged = False
 
         # Optional altitude control (off by default to avoid rmw issues)
         self.alt_enable = os.environ.get('AP_ALT_ENABLE', '0').lower() in ('1', 'true', 'yes')
@@ -130,16 +134,16 @@ class AutoPilot(Node):
             self._waypoint_reached_m = float(os.environ.get('AP_EXP_WP_REACHED_M', '0.4'))
             self._planner = os.environ.get('AP_EXP_PLANNER', 'frontier').lower()
 
-            # Arena bounds (map frame). Defaults match the 20m×20m playfield with margin.
+            # Arena bounds (map frame). Defaults match the 40m×40m playfield with margin.
             self._arena_enabled = os.environ.get('AP_EXP_ARENA_ENABLE', '1').lower() in (
                 '1',
                 'true',
                 'yes',
             )
-            self._arena_min_x = float(os.environ.get('AP_EXP_ARENA_MIN_X', '-9.4'))
-            self._arena_max_x = float(os.environ.get('AP_EXP_ARENA_MAX_X', '9.4'))
-            self._arena_min_y = float(os.environ.get('AP_EXP_ARENA_MIN_Y', '-9.4'))
-            self._arena_max_y = float(os.environ.get('AP_EXP_ARENA_MAX_Y', '9.4'))
+            self._arena_min_x = float(os.environ.get('AP_EXP_ARENA_MIN_X', '-19.4'))
+            self._arena_max_x = float(os.environ.get('AP_EXP_ARENA_MAX_X', '19.4'))
+            self._arena_min_y = float(os.environ.get('AP_EXP_ARENA_MIN_Y', '-19.4'))
+            self._arena_max_y = float(os.environ.get('AP_EXP_ARENA_MAX_Y', '19.4'))
 
             # Breadth-first (coarse-to-fine) exploration: ignore tiny frontier "holes" early
             # and prefer larger moves; relax constraints as map coverage increases.
@@ -237,6 +241,9 @@ class AutoPilot(Node):
 
     def _tick(self) -> None:
         try:
+            if self._crashed:
+                self._publish_stop()
+                return
             elapsed = (self.get_clock().now() - self._start_time).nanoseconds * 1e-9
             if self.mode == 'explore':
                 lin_x, lin_y, ang_z = self._explore_command(elapsed)
@@ -433,6 +440,17 @@ class AutoPilot(Node):
 
         if self._stuck_hits < 2:
             return lin_x, lin_y, yaw_cmd
+
+        if self._crash_stop and min(front_min, left_min, right_min) <= self._crash_contact_m:
+            self._stuck_hits = 0
+            self._current_path = []
+            self._crashed = True
+            if not self._crash_logged:
+                self._crash_logged = True
+                self.get_logger().error(
+                    f'Crash detected (stuck + obstacle within {self._crash_contact_m:.2f}m); stopping.'
+                )
+            return 0.0, 0.0, 0.0
 
         # Recovery: clear current goal, back up, rotate toward open space.
         self._stuck_hits = 0

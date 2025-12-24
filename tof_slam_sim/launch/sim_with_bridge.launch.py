@@ -15,7 +15,7 @@ from launch.actions import (
     SetEnvironmentVariable,
 )
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -121,11 +121,40 @@ def _make_bridge_node(context, *, use_sim_time):
     ]
 
 
+def _make_gz_processes(context):
+    world_value = str(LaunchConfiguration('world').perform(context)).strip()
+    world_value = os.path.expanduser(world_value)
+
+    if os.path.isabs(world_value) or '/' in world_value:
+        world_path = world_value
+    else:
+        pkg_share_path = FindPackageShare('tof_slam_sim').perform(context)
+        world_path = os.path.join(pkg_share_path, 'worlds', world_value)
+
+    if platform.system() == 'Darwin':
+        return [
+            ExecuteProcess(
+                cmd=['gz', 'sim', '-s', '-r', world_path],
+                output='screen',
+            ),
+            ExecuteProcess(
+                cmd=['gz', 'sim', '-g'],
+                output='screen',
+            ),
+        ]
+
+    return [
+        ExecuteProcess(
+            cmd=['gz', 'sim', '-r', world_path],
+            output='screen',
+        )
+    ]
+
+
 def generate_launch_description() -> LaunchDescription:
     pkg_share = FindPackageShare('tof_slam_sim')
     use_sim_time = LaunchConfiguration('use_sim_time')
     world = LaunchConfiguration('world')
-    world_path = PathJoinSubstitution([pkg_share, 'worlds', world])
     log_monitor_path = PathJoinSubstitution([pkg_share, 'scripts', 'log_monitor.py'])
 
     sensors = [
@@ -169,6 +198,11 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Start the built-in cmd_vel autopilot node.',
     )
+    autopilot_mode_arg = DeclareLaunchArgument(
+        'autopilot_mode',
+        default_value=EnvironmentVariable('AP_MODE', default_value='pattern'),
+        description='Autopilot mode for tof_slam_sim/auto_pilot (pattern|explore).',
+    )
     run_logger_arg = DeclareLaunchArgument(
         'run_logger',
         default_value='true',
@@ -195,6 +229,19 @@ def generate_launch_description() -> LaunchDescription:
         description='Gazebo world name used in topic paths (must match <world name=\"...\">).',
     )
 
+    scan_merger = Node(
+        package='tof_slam_sim',
+        executable='scan_merger',
+        name='scan_merger',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'output_frame': 'robot/base_footprint',
+            'output_topic': '/scan_merged',
+            'publish_hz': 10.0,
+        }],
+        condition=IfCondition(LaunchConfiguration('run_autopilot')),
+    )
+
     set_gz_resource_path = SetEnvironmentVariable(
         name='GZ_SIM_RESOURCE_PATH',
         value=[
@@ -210,28 +257,7 @@ def generate_launch_description() -> LaunchDescription:
         output='screen',
     )
 
-    is_macos = platform.system() == 'Darwin'
-    gz_processes: list[ExecuteProcess] = []
-    if is_macos:
-        gz_processes.append(
-            ExecuteProcess(
-                cmd=['gz', 'sim', '-s', '-r', world_path],
-                output='screen',
-            )
-        )
-        gz_processes.append(
-            ExecuteProcess(
-                cmd=['gz', 'sim', '-g'],
-                output='screen',
-            )
-        )
-    else:
-        gz_processes.append(
-            ExecuteProcess(
-                cmd=['gz', 'sim', '-r', world_path],
-                output='screen',
-            )
-        )
+    gz_processes = OpaqueFunction(function=_make_gz_processes)
 
     bridge_node = OpaqueFunction(
         function=_make_bridge_node,
@@ -239,6 +265,8 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     autopilot_env = {
+        'AP_MODE': LaunchConfiguration('autopilot_mode'),
+        'AP_SCAN_TOPIC': os.environ.get('AP_SCAN_TOPIC', '/scan_merged'),
         'AP_LIN_Z': os.environ.get('AP_LIN_Z', '0.1'),
         'AP_LIN_Z_MAX': os.environ.get('AP_LIN_Z_MAX', '0.2'),
         'AP_LIN_X': os.environ.get('AP_LIN_X', '0.3'),
@@ -306,6 +334,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(record_bag_arg)
     ld.add_action(bag_out_arg)
     ld.add_action(run_autopilot_arg)
+    ld.add_action(autopilot_mode_arg)
     ld.add_action(run_logger_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(world_arg)
@@ -317,10 +346,10 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(set_ros_log_dir)
     ld.add_action(make_log_dir)
 
-    for action in gz_processes:
-        ld.add_action(action)
+    ld.add_action(gz_processes)
 
     ld.add_action(bridge_node)
+    ld.add_action(scan_merger)
     ld.add_action(auto_pilot)
     ld.add_action(logger_proc)
     ld.add_action(rosbag_proc)

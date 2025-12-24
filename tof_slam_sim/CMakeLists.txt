@@ -56,6 +56,7 @@ set(_python_nodes
   "tof_slam_sim.cmd_vel_relay:main:cmd_vel_relay"
   "tof_slam_sim.nav2_frontier_explorer:main:nav2_frontier_explorer"
   "tof_slam_sim.topic_monitor:main:topic_monitor"
+  "tof_slam_sim.drone_health_dashboard:main:drone_health_dashboard"
 )
 
 foreach(entry IN LISTS _python_nodes)

@@ -194,9 +194,11 @@ planner_server:
       plugin: "nav2_smac_planner::SmacPlanner2D"
       tolerance: 0.35
       allow_unknown: true
-      downsample_costmap: false
-      max_iterations: 50000
-      max_on_approach_iterations: 1000
+      # The arena is now 40×40m; downsample + higher iteration cap keeps planning reliable.
+      downsample_costmap: true
+      downsampling_factor: 2
+      max_iterations: 200000
+      max_on_approach_iterations: 4000
 
 smoother_server:
   ros__parameters:

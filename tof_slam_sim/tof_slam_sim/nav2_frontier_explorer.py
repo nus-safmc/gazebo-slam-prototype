@@ -22,6 +22,7 @@ from rclpy.duration import Duration
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rclpy.time import Time
+from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 
 
@@ -75,6 +76,7 @@ class Nav2FrontierExplorer(Node):
         self.map_topic = str(self.declare_parameter('map_topic', '/map').value)
         self.goal_frame = str(self.declare_parameter('goal_frame', 'robot/map').value)
         self.base_frame = str(self.declare_parameter('base_frame', 'robot/base_link').value)
+        self.scan_topic = str(self.declare_parameter('scan_topic', 'scan_merged').value)
         self.free_thresh = int(self.declare_parameter('free_threshold', 30).value)
         self.occupied_thresh = int(self.declare_parameter('occupied_threshold', 65).value)
         self.min_cluster = int(self.declare_parameter('min_frontier_cluster_size', 6).value)
@@ -91,10 +93,19 @@ class Nav2FrontierExplorer(Node):
 
         # Hard arena bounds (map frame) to prevent "chasing" unknown space outside perimeter walls.
         self.arena_enabled = bool(self.declare_parameter('arena_enabled', True).value)
-        self.arena_min_x = float(self.declare_parameter('arena_min_x', -9.4).value)
-        self.arena_max_x = float(self.declare_parameter('arena_max_x', 9.4).value)
-        self.arena_min_y = float(self.declare_parameter('arena_min_y', -9.4).value)
-        self.arena_max_y = float(self.declare_parameter('arena_max_y', 9.4).value)
+        self.arena_min_x = float(self.declare_parameter('arena_min_x', -19.4).value)
+        self.arena_max_x = float(self.declare_parameter('arena_max_x', 19.4).value)
+        self.arena_min_y = float(self.declare_parameter('arena_min_y', -19.4).value)
+        self.arena_max_y = float(self.declare_parameter('arena_max_y', 19.4).value)
+
+        # Failure handling: detect wall contact + no motion and stop exploring.
+        self.crash_detection_enabled = bool(self.declare_parameter('crash_detection_enabled', True).value)
+        self.crash_latch = bool(self.declare_parameter('crash_latch', True).value)
+        self.crash_contact_dist_m = float(self.declare_parameter('crash_contact_dist_m', 0.14).value)
+        self.crash_check_sec = float(self.declare_parameter('crash_check_sec', 2.0).value)
+        self.crash_min_goal_age_sec = float(self.declare_parameter('crash_min_goal_age_sec', 4.0).value)
+        self.crash_min_move_m = float(self.declare_parameter('crash_min_move_m', 0.18).value)
+        self.crash_stuck_hits = int(self.declare_parameter('crash_stuck_hits', 2).value)
 
         # Breadth-first (coarse-to-fine) exploration thresholds.
         self.breadth_first = bool(self.declare_parameter('breadth_first', True).value)
@@ -135,10 +146,26 @@ class Nav2FrontierExplorer(Node):
         self._goal_handle = None
         self._result_future = None
         self._sent_time: Optional[Time] = None
+        self._last_scan: Optional[LaserScan] = None
+        self._crashed = False
+        self._stuck_hits = 0
+        self._stuck_sample_time = self.get_clock().now()
+        self._stuck_sample_x = 0.0
+        self._stuck_sample_y = 0.0
+        self._stuck_sample_init = False
 
         self._goal_history: deque[tuple[float, float]] = deque(maxlen=30)
         self._last_plan = self.get_clock().now()
         self._arena_next_warn = 0.0
+
+        if self.crash_detection_enabled:
+            scan_qos = QoSProfile(
+                reliability=ReliabilityPolicy.BEST_EFFORT,
+                history=HistoryPolicy.KEEP_LAST,
+                depth=50,
+                durability=DurabilityPolicy.VOLATILE,
+            )
+            self.create_subscription(LaserScan, self.scan_topic, self._scan_cb, scan_qos)
 
         self.timer = self.create_timer(0.5, self._tick)
         self.get_logger().info(
@@ -151,6 +178,9 @@ class Nav2FrontierExplorer(Node):
 
     def _map_cb(self, msg: OccupancyGrid) -> None:
         self._map = msg
+
+    def _scan_cb(self, msg: LaserScan) -> None:
+        self._last_scan = msg
 
     def _lookup_robot_pose(self) -> Optional[tuple[float, float, float]]:
         try:
@@ -499,6 +529,18 @@ class Nav2FrontierExplorer(Node):
     # Nav2 integration
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _scan_min_range(scan: LaserScan) -> float:
+        best = float('inf')
+        rmin = float(scan.range_min)
+        rmax = float(scan.range_max) if math.isfinite(scan.range_max) else 10.0
+        for r in scan.ranges:
+            if not math.isfinite(r) or r <= rmin:
+                continue
+            if r < best:
+                best = r
+        return best if math.isfinite(best) else rmax
+
     def _send_goal(self, gx: float, gy: float, yaw: float) -> None:
         pose = PoseStamped()
         pose.header.frame_id = self.goal_frame
@@ -546,16 +588,71 @@ class Nav2FrontierExplorer(Node):
         self._result_future = None
         self._sent_time = None
 
-    def _cancel_goal(self) -> None:
+    def _cancel_goal(self, *, reason: str) -> None:
         if self._goal_handle is None:
             return
-        self.get_logger().warning('Canceling current goal (timeout).')
+        self.get_logger().warning(f'Canceling current goal ({reason}).')
         self._goal_handle.cancel_goal_async()
         self._goal_handle = None
         self._result_future = None
         self._sent_time = None
 
+    def _maybe_detect_crash(self, *, goal_elapsed_sec: float) -> None:
+        if not self.crash_detection_enabled or self._crashed:
+            return
+        if goal_elapsed_sec < self.crash_min_goal_age_sec:
+            return
+
+        scan = self._last_scan
+        if scan is None:
+            return
+
+        pose = self._lookup_robot_pose()
+        if pose is None:
+            return
+        rx, ry, _ = pose
+
+        now = self.get_clock().now()
+        if not self._stuck_sample_init:
+            self._stuck_sample_init = True
+            self._stuck_sample_time = now
+            self._stuck_sample_x = rx
+            self._stuck_sample_y = ry
+            return
+
+        dt = (now - self._stuck_sample_time).nanoseconds * 1e-9
+        if dt < self.crash_check_sec:
+            return
+
+        moved = math.hypot(rx - self._stuck_sample_x, ry - self._stuck_sample_y)
+        self._stuck_sample_time = now
+        self._stuck_sample_x = rx
+        self._stuck_sample_y = ry
+
+        if moved >= self.crash_min_move_m:
+            self._stuck_hits = 0
+            return
+        self._stuck_hits += 1
+        if self._stuck_hits < self.crash_stuck_hits:
+            return
+        self._stuck_hits = 0
+
+        contact = self._scan_min_range(scan)
+        if contact > self.crash_contact_dist_m:
+            return
+
+        self._crashed = True
+        self.get_logger().error(
+            f'Crash detected (no motion + obstacle within {self.crash_contact_dist_m:.2f}m); stopping.'
+        )
+        self._cancel_goal(reason='crash')
+
     def _tick(self) -> None:
+        if self._crashed and self.crash_latch:
+            if self._goal_handle is not None:
+                self._cancel_goal(reason='crash')
+            return
+
         if self._map is None:
             return
         if not self._nav.wait_for_server(timeout_sec=0.0):
@@ -571,7 +668,9 @@ class Nav2FrontierExplorer(Node):
                     self._sent_time = None
                 return
             if elapsed > self.goal_timeout:
-                self._cancel_goal()
+                self._cancel_goal(reason='timeout')
+                return
+            self._maybe_detect_crash(goal_elapsed_sec=elapsed)
             return
 
         now = self.get_clock().now()

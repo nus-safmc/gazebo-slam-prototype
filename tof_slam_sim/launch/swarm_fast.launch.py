@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import tempfile
 import time
@@ -11,6 +12,7 @@ from launch.actions import (
     GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction,
+    SetLaunchConfiguration,
     TimerAction,
 )
 from launch.conditions import IfCondition
@@ -38,6 +40,75 @@ def _truthy(value: object) -> bool:
     return str(value).strip().lower() in ('1', 'true', 'yes', 'on')
 
 
+def _parse_robots(context) -> list[str]:
+    num_raw = str(LaunchConfiguration('num_robots').perform(context)).strip()
+    if num_raw:
+        try:
+            n = int(num_raw)
+        except ValueError:
+            n = 0
+        if n >= 1:
+            n = min(n, 15)
+            robots = ['robot'] + [f'robot{i}' for i in range(2, n + 1)]
+            return robots
+
+    raw = str(LaunchConfiguration('robots').perform(context)).strip()
+    if not raw:
+        return ['robot']
+    robots = [r.strip() for r in raw.split(',') if r.strip()]
+    # Ensure unique and stable order.
+    out: list[str] = []
+    seen: set[str] = set()
+    for r in robots:
+        if r in seen:
+            continue
+        seen.add(r)
+        out.append(r)
+    out = out[:15]
+    return out or ['robot']
+
+
+def _scan_topic_list(robot: str) -> list[str]:
+    prefix = '' if robot == 'robot' else f'/{robot}'
+    return _scan_topics(prefix)
+
+
+def _merged_scan_topic(robot: str) -> str:
+    return '/scan_merged' if robot == 'robot' else f'/{robot}/scan_merged'
+
+
+def _split_arena(
+    *,
+    robots: list[str],
+    lo: float,
+    hi: float,
+    overlap: float,
+) -> dict[str, tuple[float, float, float, float]]:
+    n = max(1, len(robots))
+    cols = int(math.ceil(math.sqrt(n)))
+    rows = int(math.ceil(n / cols))
+    span = hi - lo
+    cell_w = span / cols
+    cell_h = span / rows
+
+    out: dict[str, tuple[float, float, float, float]] = {}
+    for i, r in enumerate(robots):
+        row = i // cols
+        col = i % cols
+        min_x = lo + col * cell_w
+        max_x = lo + (col + 1) * cell_w
+        min_y = lo + row * cell_h
+        max_y = lo + (row + 1) * cell_h
+
+        min_x = max(lo, min_x - overlap)
+        max_x = min(hi, max_x + overlap)
+        min_y = max(lo, min_y - overlap)
+        max_y = min(hi, max_y + overlap)
+
+        out[r] = (min_x, max_x, min_y, max_y)
+    return out
+
+
 def _write_nav2_params(*, base_path: str, robot: str) -> str:
     with open(base_path, 'r', encoding='utf-8') as f:
         text = f.read()
@@ -57,7 +128,7 @@ def _write_nav2_params(*, base_path: str, robot: str) -> str:
 
 
 def _nav2_actions(context):
-    robots = ['robot', 'robot2', 'robot3', 'robot4']
+    robots = _parse_robots(context)
 
     use_sim_time_str = LaunchConfiguration('use_sim_time').perform(context)
     use_sim_time = _truthy(use_sim_time_str)
@@ -68,16 +139,10 @@ def _nav2_actions(context):
 
     if run_autopilot:
         # Use the repo's exploration autopilot (one per robot) instead of Nav2.
-        lo = -8.4
-        hi = 8.4
-        mid = 0.0
+        lo = -18.4
+        hi = 18.4
         overlap = 0.6
-        quadrants = {
-            'robot': (lo, mid + overlap, lo, mid + overlap),          # SW
-            'robot2': (lo, mid + overlap, mid - overlap, hi),         # NW
-            'robot3': (mid - overlap, hi, mid - overlap, hi),         # NE
-            'robot4': (mid - overlap, hi, lo, mid + overlap),         # SE
-        }
+        cells = _split_arena(robots=robots, lo=lo, hi=hi, overlap=overlap)
 
         common_env = {
             'AP_MODE': 'explore',
@@ -98,7 +163,7 @@ def _nav2_actions(context):
         actions = []
         for r in robots:
             ns = '' if r == 'robot' else r
-            min_x, max_x, min_y, max_y = quadrants[r]
+            min_x, max_x, min_y, max_y = cells.get(r, (lo, hi, lo, hi))
             env = dict(common_env)
             env.update({
                 'AP_TOPIC': 'cmd_vel',
@@ -133,16 +198,10 @@ def _nav2_actions(context):
     # Split arena into 4 overlapping quadrants so robots spread out instead of chasing the same frontier.
     # Keep a margin from the perimeter walls / keepout band so Nav2 doesn't end up with a
     # "start occupied" condition when a robot gets too close to the border.
-    lo = -8.4
-    hi = 8.4
-    mid = 0.0
+    lo = -18.4
+    hi = 18.4
     overlap = 0.6
-    quadrants = {
-        'robot': (lo, mid + overlap, lo, mid + overlap),          # SW
-        'robot2': (lo, mid + overlap, mid - overlap, hi),         # NW
-        'robot3': (mid - overlap, hi, mid - overlap, hi),         # NE
-        'robot4': (mid - overlap, hi, lo, mid + overlap),         # SE
-    }
+    cells = _split_arena(robots=robots, lo=lo, hi=hi, overlap=overlap)
 
     actions = []
     for r in robots:
@@ -175,7 +234,7 @@ def _nav2_actions(context):
             )
 
         if run_explorer:
-            min_x, max_x, min_y, max_y = quadrants[r]
+            min_x, max_x, min_y, max_y = cells.get(r, (lo, hi, lo, hi))
             actions.append(
                 Node(
                     package='tof_slam_sim',
@@ -214,59 +273,113 @@ def _nav2_actions(context):
     return actions
 
 
-def generate_launch_description() -> LaunchDescription:
-    pkg = FindPackageShare('tof_slam_sim')
-    use_sim_time = LaunchConfiguration('use_sim_time')
-    world = LaunchConfiguration('world')
+def _maybe_select_spawns(context):
+    world_arg = str(LaunchConfiguration('world').perform(context)).strip()
+    if not world_arg:
+        return []
 
-    declare_use_sim_time = DeclareLaunchArgument(
-        'use_sim_time',
-        default_value='true',
-        description='Use simulation time',
-    )
-    declare_world = DeclareLaunchArgument(
-        'world',
-        default_value='playfield_swarm.sdf',
-        description='World file (SDF) under tof_slam_sim/worlds.',
-    )
-    declare_run_nav2 = DeclareLaunchArgument(
-        'run_nav2',
-        default_value='true',
-        description='Start 4 Nav2 stacks (one per robot).',
-    )
-    declare_run_explorer = DeclareLaunchArgument(
-        'run_explorer',
-        default_value='true',
-        description='Start 4 frontier explorers (one per robot).',
-    )
-    declare_nav2_params = DeclareLaunchArgument(
-        'nav2_params',
-        default_value=PathJoinSubstitution([pkg, 'config', 'nav2_params_rex.yaml']),
-        description='Nav2 params YAML template (robot2/3/4 are auto-rewritten).',
-    )
-    declare_rviz = DeclareLaunchArgument(
-        'rviz',
-        default_value='true',
-        description='Launch RViz.',
-    )
+    if os.path.isabs(world_arg) or '/' in world_arg:
+        base_world = os.path.expanduser(world_arg)
+    else:
+        base_world = os.path.join(
+            get_package_share_directory('tof_slam_sim'), 'worlds', world_arg
+        )
 
-    rviz_enabled = IfCondition(LaunchConfiguration('rviz'))
+    try:
+        from tof_slam_sim.spawn_selector import (
+            Bounds,
+            default_spawn_spots,
+            extract_robot_includes,
+            select_spawn_points,
+            write_world_with_robot_spawns,
+        )
+    except Exception:
+        return []
 
-    declare_stub_autopilot = DeclareLaunchArgument(
-        'run_autopilot',
-        default_value='false',
-        description='Run 4 autopilot explorers (one per robot) instead of Nav2.',
+    robots = _parse_robots(context)
+    robots = robots[:15]
+
+    default_mode = _truthy(LaunchConfiguration('default_spawn').perform(context))
+
+    # Always build a temp world if we need to spawn robots not already present
+    # in the base world; otherwise leave the world untouched (keeps existing defaults).
+    existing = extract_robot_includes(world_sdf_path=base_world)
+    needs_temp_world = any(r not in existing for r in robots) or any(
+        name.startswith('robot') and name not in set(robots) for name in existing.keys()
     )
 
-    robots = ['robot', 'robot2', 'robot3', 'robot4']
+    if default_mode:
+        if not needs_temp_world:
+            return []
+        # Fill missing robots using the first available spawn spots.
+        spots = default_spawn_spots(bounds=Bounds(-20.0, 20.0, -20.0, 20.0), margin_m=4.0)
+        used_xy = {(xy[0], xy[1]) for _uri, xy in existing.values()}
+        spawns: dict[str, tuple[float, float, float]] = {}
+        for r in robots:
+            if r in existing:
+                _uri, (x, y, yaw) = existing[r]
+                spawns[r] = (x, y, yaw)
+                continue
+            spot = next((s for s in spots if (s.x, s.y) not in used_xy), None)
+            if spot is None:
+                spot = spots[0]
+            used_xy.add((spot.x, spot.y))
+            spawns[r] = (spot.x, spot.y, spot.yaw)
+
+        out_world = write_world_with_robot_spawns(
+            base_world_sdf_path=base_world,
+            robots=robots,
+            spawns=spawns,
+            z_m=0.05,
+        )
+        return [SetLaunchConfiguration('world', out_world)]
+
+    try:
+        spawns = select_spawn_points(world_sdf_path=base_world, robots=robots)
+    except Exception:
+        spawns = None
+
+    if not spawns:
+        # UI canceled: fall back to default (keeps existing spawns where present).
+        spots = default_spawn_spots(bounds=Bounds(-20.0, 20.0, -20.0, 20.0), margin_m=4.0)
+        used_xy = {(xy[0], xy[1]) for _uri, xy in existing.values()}
+        spawns = {}
+        for r in robots:
+            if r in existing:
+                _uri, (x, y, yaw) = existing[r]
+                spawns[r] = (x, y, yaw)
+                continue
+            spot = next((s for s in spots if (s.x, s.y) not in used_xy), None)
+            if spot is None:
+                spot = spots[0]
+            used_xy.add((spot.x, spot.y))
+            spawns[r] = (spot.x, spot.y, spot.yaw)
+
+    out_world = write_world_with_robot_spawns(
+        base_world_sdf_path=base_world,
+        robots=robots,
+        spawns=spawns,
+        z_m=0.05,
+    )
+    return [SetLaunchConfiguration('world', out_world)]
+
+
+def _build_swarm(context):
+    pkg_share = get_package_share_directory('tof_slam_sim')
+    robots = _parse_robots(context)
+
+    use_sim_time_str = LaunchConfiguration('use_sim_time').perform(context)
+    use_sim_time = _truthy(use_sim_time_str)
+
+    world_value = str(LaunchConfiguration('world').perform(context)).strip()
+    if not world_value:
+        world_value = 'playfield_swarm.sdf'
 
     sim_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([pkg, 'launch', 'sim_with_bridge.launch.py'])
-        ]),
+        PythonLaunchDescriptionSource([os.path.join(pkg_share, 'launch', 'sim_with_bridge.launch.py')]),
         launch_arguments={
-            'use_sim_time': use_sim_time,
-            'world': world,
+            'use_sim_time': 'true' if use_sim_time else 'false',
+            'world': world_value,
             'robots': ','.join(robots),
             'run_autopilot': 'false',
             'run_logger': 'false',
@@ -274,8 +387,6 @@ def generate_launch_description() -> LaunchDescription:
         }.items(),
     )
 
-    # Publish required TF for all robots (static transforms + odom->base_footprint),
-    # including namespaced `/robotN/tf` streams for Nav2 stacks.
     swarm_tf = Node(
         package='tof_slam_sim',
         executable='swarm_tf_broadcaster',
@@ -289,11 +400,9 @@ def generate_launch_description() -> LaunchDescription:
         }],
     )
 
-    # Merge each robot's 8 ToF LaserScans into its own 360° scan topic.
     scan_mergers: list[Node] = []
     for r in robots:
-        prefix = '' if r == 'robot' else f'/{r}'
-        out_topic = '/scan_merged' if r == 'robot' else f'/{r}/scan_merged'
+        out_topic = _merged_scan_topic(r)
         scan_mergers.append(
             Node(
                 package='tof_slam_sim',
@@ -301,7 +410,7 @@ def generate_launch_description() -> LaunchDescription:
                 name=f'{r}_scan_merger',
                 parameters=[{
                     'use_sim_time': use_sim_time,
-                    'input_topics': _scan_topics(prefix),
+                    'input_topics': _scan_topic_list(r),
                     'output_topic': out_topic,
                     'output_frame': f'{r}/base_footprint',
                     'publish_hz': 10.0,
@@ -310,7 +419,7 @@ def generate_launch_description() -> LaunchDescription:
             )
         )
 
-    # Fuse all robot scans into one global occupancy grid at /map (and /map_updates).
+    scan_topics = [_merged_scan_topic(r) for r in robots]
     fuser = Node(
         package='tof_slam_sim',
         executable='swarm_map_fuser',
@@ -322,54 +431,131 @@ def generate_launch_description() -> LaunchDescription:
             'map_topic': '/map',
             'update_topic': '/map_updates',
             'robots': robots,
-            'scan_topics': [
-                '/scan_merged',
-                '/robot2/scan_merged',
-                '/robot3/scan_merged',
-                '/robot4/scan_merged',
-            ],
+            'scan_topics': scan_topics,
             'resolution': 0.05,
-            'min_x': -10.0,
-            'max_x': 10.0,
-            'min_y': -10.0,
-            'max_y': 10.0,
-            # Seed an occupied border so robots keep a safety buffer from the perimeter walls.
-            # This is enforced in both global + local costmaps via the shared `/map` static layer.
+            'min_x': -20.0,
+            'max_x': 20.0,
+            'min_y': -20.0,
+            'max_y': 20.0,
             'seed_keepout': True,
-            # Match the explorer arena bounds (±8.4m) so Nav2 won't route along the outer wall band.
             'keepout_margin_m': 1.6,
             'publish_period_sec': 0.5,
         }],
     )
 
-    # Give Gazebo + bridge + TF a moment to come up so all Nav2 stacks can activate.
     nav2_and_exploration = TimerAction(
         period=5.0,
         actions=[OpaqueFunction(function=_nav2_actions)],
     )
 
+    rviz_enabled = IfCondition(LaunchConfiguration('rviz'))
     rviz = Node(
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', PathJoinSubstitution([pkg, 'config', 'slam.rviz'])],
+        arguments=['-d', os.path.join(pkg_share, 'config', 'slam.rviz')],
         parameters=[{'use_sim_time': use_sim_time}],
         condition=rviz_enabled,
     )
 
+    health_dashboard = Node(
+        package='tof_slam_sim',
+        executable='drone_health_dashboard',
+        name='drone_health_dashboard',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'robots': robots,
+            'map_frame': 'robot/map',
+            'ui': LaunchConfiguration('health_ui'),
+            'publish_markers': LaunchConfiguration('publish_drone_markers'),
+            'marker_topic': '/swarm/drone_markers',
+            'pose_topic': '/swarm/drone_poses',
+        }],
+    )
+
+    return [sim_launch, swarm_tf, *scan_mergers, fuser, nav2_and_exploration, rviz, health_dashboard]
+
+
+def generate_launch_description() -> LaunchDescription:
+    declare_use_sim_time = DeclareLaunchArgument(
+        'use_sim_time',
+        default_value='true',
+        description='Use simulation time',
+    )
+    declare_world = DeclareLaunchArgument(
+        'world',
+        default_value='playfield_swarm.sdf',
+        description='World file (SDF) under tof_slam_sim/worlds.',
+    )
+    declare_num_robots = DeclareLaunchArgument(
+        'num_robots',
+        default_value='',
+        description='If set (>=1), auto-generate robot,robot2..robotN and ignore `robots`.',
+    )
+    declare_robots = DeclareLaunchArgument(
+        'robots',
+        default_value='robot,robot2,robot3,robot4',
+        description='Comma-separated robot model names to use/spawn (e.g. "robot,robot2,robot3").',
+    )
+    declare_default_spawn = DeclareLaunchArgument(
+        'default_spawn',
+        default_value='false',
+        description='If true, skip the spawn UI and use default world spawns.',
+    )
+    declare_run_nav2 = DeclareLaunchArgument(
+        'run_nav2',
+        default_value='true',
+        description='Start 4 Nav2 stacks (one per robot).',
+    )
+    declare_run_explorer = DeclareLaunchArgument(
+        'run_explorer',
+        default_value='true',
+        description='Start 4 frontier explorers (one per robot).',
+    )
+    declare_nav2_params = DeclareLaunchArgument(
+        'nav2_params',
+        default_value=PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'config', 'nav2_params_rex.yaml']),
+        description='Nav2 params YAML template (robot2/3/4 are auto-rewritten).',
+    )
+    declare_rviz = DeclareLaunchArgument(
+        'rviz',
+        default_value='true',
+        description='Launch RViz.',
+    )
+    declare_health_ui = DeclareLaunchArgument(
+        'health_ui',
+        default_value='true',
+        description='Show runtime drone health UI (tkinter).',
+    )
+    declare_publish_drone_markers = DeclareLaunchArgument(
+        'publish_drone_markers',
+        default_value='true',
+        description='Publish drone pose markers for RViz (/swarm/drone_markers).',
+    )
+
+    declare_stub_autopilot = DeclareLaunchArgument(
+        'run_autopilot',
+        default_value='false',
+        description='Run 4 autopilot explorers (one per robot) instead of Nav2.',
+    )
+
+    maybe_spawn_ui = OpaqueFunction(function=_maybe_select_spawns)
+    build_swarm = OpaqueFunction(function=_build_swarm)
+
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
     ld.add_action(declare_world)
+    ld.add_action(declare_num_robots)
+    ld.add_action(declare_robots)
+    ld.add_action(declare_default_spawn)
     ld.add_action(declare_run_nav2)
     ld.add_action(declare_run_explorer)
     ld.add_action(declare_nav2_params)
     ld.add_action(declare_rviz)
+    ld.add_action(declare_health_ui)
+    ld.add_action(declare_publish_drone_markers)
     ld.add_action(declare_stub_autopilot)
-    ld.add_action(sim_launch)
-    ld.add_action(swarm_tf)
-    for n in scan_mergers:
-        ld.add_action(n)
-    ld.add_action(fuser)
-    ld.add_action(nav2_and_exploration)
-    ld.add_action(rviz)
+    ld.add_action(maybe_spawn_ui)
+    ld.add_action(build_swarm)
     return ld
