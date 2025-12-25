@@ -34,7 +34,7 @@ controller_server:
     min_theta_velocity_threshold: 0.001
     # How long the controller may fail to produce a command before aborting.
     # Too low causes rapid abort / recovery thrashing in cluttered starts.
-    failure_tolerance: 1.0
+    failure_tolerance: 3.0
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -42,8 +42,8 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.2
-      movement_time_allowance: 10.0
+      required_movement_radius: 0.10
+      movement_time_allowance: 20.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
@@ -82,7 +82,7 @@ controller_server:
       angular_granularity: 0.025
       transform_tolerance: 0.2
       xy_goal_tolerance: 0.20
-      trans_stopped_velocity: 0.05
+      trans_stopped_velocity: 0.02
       short_circuit_trajectory_evaluation: true
 
       critics: [
@@ -134,14 +134,14 @@ local_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 6.0
+          raytrace_max_range: 4.1
           raytrace_min_range: 0.0
-          obstacle_max_range: 5.5
-          obstacle_min_range: 0.25
+          obstacle_max_range: 4.0
+          obstacle_min_range: 0.35
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.85
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.45
       always_send_full_costmap: True
 
 global_costmap:
@@ -174,14 +174,14 @@ global_costmap:
           clearing: True
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 6.0
+          raytrace_max_range: 4.1
           raytrace_min_range: 0.0
-          obstacle_max_range: 5.5
-          obstacle_min_range: 0.25
+          obstacle_max_range: 4.0
+          obstacle_min_range: 0.35
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 1.05
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.55
       always_send_full_costmap: True
 
 planner_server:
@@ -195,8 +195,8 @@ planner_server:
       tolerance: 0.35
       allow_unknown: true
       # The arena is now 40×40m; downsample + higher iteration cap keeps planning reliable.
-      downsample_costmap: true
-      downsampling_factor: 2
+      downsample_costmap: false
+      downsampling_factor: 1
       max_iterations: 200000
       max_on_approach_iterations: 4000
 

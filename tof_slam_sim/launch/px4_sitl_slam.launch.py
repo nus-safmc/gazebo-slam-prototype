@@ -154,7 +154,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', PathJoinSubstitution([pkg_tof_slam_sim, 'config', 'slam.rviz'])],
+        arguments=['-d', PathJoinSubstitution([pkg_tof_slam_sim, 'config', 'slam_px4.rviz'])],
         parameters=[{'use_sim_time': use_sim_time}],
     )
 

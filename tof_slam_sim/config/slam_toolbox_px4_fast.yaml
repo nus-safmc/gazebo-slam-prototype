@@ -15,13 +15,15 @@ slam_toolbox:
     scan_topic: /scan_merged
 
     transform_timeout: 0.2
-    transform_publish_period: 0.10
+    # Keep /map->/odom from `map_tf_fallback` for stability; slam_toolbox TF
+    # can become stale when the scan has no finite returns.
+    transform_publish_period: 0.0
     tf_buffer_duration: 30.0
     map_update_interval: 2.0
 
     resolution: 0.10
-    min_laser_range: 0.05
-    max_laser_range: 6.0
+    min_laser_range: 0.35
+    max_laser_range: 4.1
     minimum_time_interval: 0.20
     smear_deviation: 0.25
 
@@ -46,4 +48,3 @@ slam_toolbox:
     debug_logging: false
     throttle_scans: 1
     enable_interactive_mode: false
-

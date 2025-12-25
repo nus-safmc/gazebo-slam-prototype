@@ -46,6 +46,7 @@ pkill -f '[m]ake px4_sitl' 2>/dev/null || true
 # Kill ROS nodes that frequently outlive Gazebo (and then see /clock jump backwards).
 pkill -f '[s]lam_toolbox/sync_slam_toolbox_node' 2>/dev/null || true
 pkill -f '[r]viz2/rviz2.*tof_slam_sim/config/slam\.rviz' 2>/dev/null || true
+pkill -f '[r]viz2/rviz2.*tof_slam_sim/config/slam_px4\.rviz' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/auto_pilot' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/scan_merger' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/topic_monitor' 2>/dev/null || true

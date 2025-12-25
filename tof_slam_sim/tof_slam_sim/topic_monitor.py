@@ -30,9 +30,78 @@ except ImportError:  # pragma: no cover
     )
 from rclpy.time import Time
 from nav_msgs.msg import OccupancyGrid, Odometry
+from geometry_msgs.msg import Twist
+from geometry_msgs.msg import PoseStamped
 from rosidl_runtime_py.utilities import get_message
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformListener, TransformException
+
+try:  # Optional (only present in PX4 SITL track)
+    from px4_msgs.msg import OffboardControlMode, TrajectorySetpoint, VehicleOdometry, VehicleStatus
+except Exception:  # pragma: no cover - defensive for non-PX4 environments
+    OffboardControlMode = None  # type: ignore[assignment]
+    TrajectorySetpoint = None  # type: ignore[assignment]
+    VehicleOdometry = None  # type: ignore[assignment]
+    VehicleStatus = None  # type: ignore[assignment]
+
+
+def _is_finite(value: float) -> bool:
+    return math.isfinite(float(value))
+
+
+def _quat_to_rot(w: float, x: float, y: float, z: float) -> list[list[float]]:
+    ww = w * w
+    xx = x * x
+    yy = y * y
+    zz = z * z
+
+    wx = w * x
+    wy = w * y
+    wz = w * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+
+    return [
+        [ww + xx - yy - zz, 2.0 * (xy - wz), 2.0 * (xz + wy)],
+        [2.0 * (xy + wz), ww - xx + yy - zz, 2.0 * (yz - wx)],
+        [2.0 * (xz - wy), 2.0 * (yz + wx), ww - xx - yy + zz],
+    ]
+
+
+def _mat_mul(a: list[list[float]], b: list[list[float]]) -> list[list[float]]:
+    out = [[0.0, 0.0, 0.0] for _ in range(3)]
+    for i in range(3):
+        for j in range(3):
+            out[i][j] = a[i][0] * b[0][j] + a[i][1] * b[1][j] + a[i][2] * b[2][j]
+    return out
+
+
+def _yaw_from_rot_enu_flu(r: list[list[float]]) -> float:
+    return math.atan2(r[1][0], r[0][0])
+
+
+def _yaw_enu_from_px4_q(q_wxyz: list[float]) -> float | None:
+    if len(q_wxyz) != 4:
+        return None
+    w, x, y, z = (float(q_wxyz[0]), float(q_wxyz[1]), float(q_wxyz[2]), float(q_wxyz[3]))
+    if not all(_is_finite(v) for v in (w, x, y, z)):
+        return None
+
+    # PX4: q is FRD(body) -> NED(world). We want yaw in ENU about +Z (up).
+    r_ned_frd = _quat_to_rot(w, x, y, z)
+    r_enu_ned = [
+        [0.0, 1.0, 0.0],
+        [1.0, 0.0, 0.0],
+        [0.0, 0.0, -1.0],
+    ]
+    r_frd_flu = [
+        [1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, -1.0],
+    ]
+    r_enu_flu = _mat_mul(_mat_mul(r_enu_ned, r_ned_frd), r_frd_flu)
+    return float(_yaw_from_rot_enu_flu(r_enu_flu))
 
 
 DEFAULT_SENSOR_NAMES: Tuple[str, ...] = (
@@ -309,6 +378,63 @@ class TopicMonitor(Node):
                 )
                 state.last_detail_error = None
                 return
+
+            if isinstance(msg, Twist):
+                lx = float(msg.linear.x)
+                ly = float(msg.linear.y)
+                az = float(msg.angular.z)
+                state.last_summary = f'lin=({lx:.2f},{ly:.2f}) yaw_rate={az:.2f}'
+                state.last_detail_error = None
+                return
+
+            if isinstance(msg, PoseStamped):
+                p = msg.pose.position
+                state.last_summary = f'pos=({p.x:.2f},{p.y:.2f},{p.z:.2f})'
+                state.last_detail_error = None
+                return
+
+            if VehicleOdometry is not None and isinstance(msg, VehicleOdometry):
+                pn = float(msg.position[0])
+                pe = float(msg.position[1])
+                pd = float(msg.position[2])
+                pos_ok = all(_is_finite(v) for v in (pn, pe, pd))
+
+                x_enu = pe
+                y_enu = pn
+                z_enu = -pd
+
+                yaw_enu = _yaw_enu_from_px4_q(list(msg.q))
+                yaw_txt = 'yaw_enu=?' if yaw_enu is None else f'yaw_enu={yaw_enu:.2f}'
+
+                if pos_ok:
+                    state.last_summary = f'pos_enu=({x_enu:.2f},{y_enu:.2f},{z_enu:.2f}) {yaw_txt}'
+                    state.last_detail_error = None
+                else:
+                    state.last_summary = f'pos_enu=(invalid) {yaw_txt}'
+                    state.last_detail_error = 'MALFORMED position has NaN/inf'
+                return
+
+            if VehicleStatus is not None and isinstance(msg, VehicleStatus):
+                state.last_summary = (
+                    f'nav_state={int(msg.nav_state)} arming_state={int(msg.arming_state)} '
+                    f'failsafe={bool(msg.failsafe)} preflight_ok={bool(msg.pre_flight_checks_pass)}'
+                )
+                state.last_detail_error = None
+                return
+
+            if OffboardControlMode is not None and isinstance(msg, OffboardControlMode):
+                state.last_summary = (
+                    f'velocity={bool(msg.velocity)} position={bool(msg.position)} '
+                    f'attitude={bool(msg.attitude)} body_rate={bool(msg.body_rate)}'
+                )
+                state.last_detail_error = None
+                return
+
+            if TrajectorySetpoint is not None and isinstance(msg, TrajectorySetpoint):
+                v = msg.velocity
+                state.last_summary = f'vel_ned=({v[0]:.2f},{v[1]:.2f},{v[2]:.2f}) yawspeed={float(msg.yawspeed):.2f}'
+                state.last_detail_error = None
+                return
         except Exception as exc:  # pragma: no cover - defensive
             state.last_summary = None
             state.last_detail_error = f'detail error: {exc}'
@@ -440,7 +566,17 @@ class TopicMonitor(Node):
                     )
 
         # Add small content summaries for high-value topics.
-        for topic_name in ('/map', '/scan_merged', '/odom'):
+        for topic_name in (
+            '/map',
+            '/scan_merged',
+            '/odom',
+            '/cmd_vel',
+            '/model/x500_small_tof_0/pose',
+            '/fmu/out/vehicle_odometry',
+            '/fmu/out/vehicle_status',
+            '/fmu/in/offboard_control_mode',
+            '/fmu/in/trajectory_setpoint',
+        ):
             state = self._topic_states.get(topic_name)
             if state is None:
                 continue

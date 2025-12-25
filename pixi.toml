@@ -129,6 +129,12 @@ px4_sitl_slam = "bash scripts/run_px4_sitl_slam.sh"
 px4_sitl_slam_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_sitl_slam bash scripts/run_px4_sitl_slam.sh"
 	px4_nav2_explore = "bash scripts/run_px4_nav2_explore.sh"
 	px4_nav2_explore_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_nav2_explore bash scripts/run_px4_nav2_explore.sh"
+	px4_nav2_explore_view = "bash scripts/run_px4_nav2_explore.sh rviz:=true gz_gui:=true"
+	px4_nav2_explore_view_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_nav2_explore_view bash scripts/run_px4_nav2_explore.sh rviz:=true gz_gui:=true"
+	px4_nav2_explore_gui = "bash scripts/run_px4_nav2_explore.sh rviz:=true gz_gui:=true"
+	px4_nav2_explore_gui_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_nav2_explore_gui bash scripts/run_px4_nav2_explore.sh rviz:=true gz_gui:=true"
+	px4_nav2_explore_playfield_gui = "bash scripts/run_px4_nav2_explore.sh rviz:=true gz_gui:=true world:=playfield.sdf target_alt_m:=1.0"
+	px4_nav2_explore_playfield_gui_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_nav2_explore_playfield_gui bash scripts/run_px4_nav2_explore.sh rviz:=true gz_gui:=true world:=playfield.sdf target_alt_m:=1.0"
 	tail_log = "bash scripts/tail_latest_log.sh"
 	verify_tf_rates = "bash scripts/verify_tf_rates.sh"
 	verify_tf_rates_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh verify_tf_rates bash scripts/verify_tf_rates.sh"
@@ -142,8 +148,7 @@ px4_sitl_slam_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_sitl
 /depth/tof_5@sensor_msgs/msg/Image@gz.msgs.Image \
 /depth/tof_6@sensor_msgs/msg/Image@gz.msgs.Image \
 /depth/tof_7@sensor_msgs/msg/Image@gz.msgs.Image \
-/depth/tof_8@sensor_msgs/msg/Image@gz.msgs.Image \
-/model/x500_small_tof_0/pose@geometry_msgs/msg/PoseStamped@gz.msgs.Pose
+/depth/tof_8@sensor_msgs/msg/Image@gz.msgs.Image
 """
 sim     = "bash scripts/cleanup_sim.sh && AP_MODE=explore ros2 launch tof_slam_sim slam_test.launch.py"
 sim_fast = "bash scripts/cleanup_sim.sh && AP_MODE=explore AP_EXP_FORWARD=0.9 AP_EXP_STRAFE=0.25 AP_EXP_TURN=0.9 AP_EXP_INFLATE_M=0.35 ros2 launch tof_slam_sim slam_fast.launch.py"

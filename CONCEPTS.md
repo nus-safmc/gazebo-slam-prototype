@@ -14,11 +14,18 @@ The rest of this document focuses on the **fast prototyping track**, since that�
 If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of the lightweight `cmd_vel` model:
 
 - Requires `MicroXRCEAgent` (PX4 uXRCE-DDS agent). If `pixi run -e jazzy px4_sitl` errors, install it (e.g. `sudo apt install micro-xrce-dds-agent`).
+- External vision aiding: `gz_pose_info_to_pose_stamped` publishes `/model/x500_small_tof_0/pose` from Gazebo `/world/<world>/dynamic_pose/info`, and `pose_to_px4_visual_odometry` feeds PX4 `/fmu/in/vehicle_visual_odometry`.
 - PX4 + Gazebo + ToF → merged scan: `pixi run -e jazzy px4_sitl`
 - PX4 + SLAM Toolbox: `pixi run -e jazzy px4_sitl_slam`
 - PX4 + SLAM + Nav2 frontier exploration (PX4 offboard): `pixi run -e jazzy px4_nav2_explore`
-- To capture a full terminal log while still seeing it live: `pixi run -e jazzy px4_nav2_explore_log` (writes to `log/run_logs/`).
+- To capture a full terminal log while still seeing it live: `pixi run -e jazzy px4_nav2_explore_log` (writes to `log/run_logs/`; headless by design).
+- To launch **Gazebo GUI + RViz** and capture logs: `pixi run -e jazzy px4_nav2_explore_gui_log` (alias: `px4_nav2_explore_view_log`).
+- To force the denser playfield world + GUI + logs: `pixi run -e jazzy px4_nav2_explore_playfield_gui_log`.
+- Expect ~20–30s for PX4 preflight → arm → takeoff; watch for `Ready for takeoff!`, `Armed by external command`, `Takeoff detected`.
+- Spawn pose is configurable via `px4_model_pose:=x,y,z,roll,pitch,yaw` (default `0,-2,0.2,0,0,0` to avoid the playfield's central pillar at the origin).
 - To tail the latest log: `pixi run -e jazzy tail_log -- px4_nav2_explore`
+  - PX4 track world is configurable via `world:=playfield_sparse.sdf` / `world:=playfield.sdf` (defaults to `playfield_sparse.sdf`, ~40×40 m).
+  - RViz scan tip: `/scan_merged` is the real scan (inf = no return). `/scan_merged_viz` fills inf beams with `range_max` so you see a full ring.
 
 ---
 

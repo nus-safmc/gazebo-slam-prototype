@@ -6,7 +6,7 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, SetEnvironmentVariable
 from launch.conditions import IfCondition
-from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
@@ -34,6 +34,21 @@ def generate_launch_description() -> LaunchDescription:
         'use_sim_time',
         default_value='true',
         description='Use simulation time (Gazebo /clock).',
+    )
+    world_arg = DeclareLaunchArgument(
+        'world',
+        default_value='playfield_sparse.sdf',
+        description='World file under tof_slam_sim/worlds (e.g. playfield_sparse.sdf, playfield.sdf).',
+    )
+    world_name_arg = DeclareLaunchArgument(
+        'gz_world_name',
+        default_value='playfield',
+        description='Gazebo world name (used for /world/<name>/clock).',
+    )
+    gz_gui_arg = DeclareLaunchArgument(
+        'gz_gui',
+        default_value='false',
+        description='Start Gazebo GUI (gz sim -g).',
     )
     use_visual_odometry_arg = DeclareLaunchArgument(
         'use_visual_odometry',
@@ -65,16 +80,28 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Start MicroXRCEAgent (PX4 uXRCE-DDS).',
     )
+    px4_model_pose_arg = DeclareLaunchArgument(
+        'px4_model_pose',
+        default_value='0,-2,0.2,0,0,0',
+        description='PX4_GZ_MODEL_POSE for spawning the vehicle (x,y,z,roll,pitch,yaw).',
+    )
 
     px4_dir = LaunchConfiguration('px4_dir')
     run_gz = LaunchConfiguration('run_gz')
+    world = LaunchConfiguration('world')
+    gz_world_name = LaunchConfiguration('gz_world_name')
     use_visual_odometry = LaunchConfiguration('use_visual_odometry')
+    px4_model_pose = LaunchConfiguration('px4_model_pose')
     set_gz_resource_path = SetEnvironmentVariable(
         name='GZ_SIM_RESOURCE_PATH',
         value=[
             PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'models']),
             ':',
             PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'worlds']),
+            ':',
+            PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'models']),
+            ':',
+            PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'worlds']),
         ],
     )
 
@@ -89,10 +116,12 @@ def generate_launch_description() -> LaunchDescription:
             EnvironmentVariable('PATH'),
         ],
     )
-
-    gz_world_path = PathJoinSubstitution(
-        [px4_dir, 'Tools', 'simulation', 'gz', 'worlds', 'default.sdf']
+    set_px4_model_pose = SetEnvironmentVariable(
+        name='PX4_GZ_MODEL_POSE',
+        value=px4_model_pose,
     )
+
+    gz_world_path = PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'worlds', world])
     gz_sim = ExecuteProcess(
         cmd=[
             'gz',
@@ -104,6 +133,12 @@ def generate_launch_description() -> LaunchDescription:
         ],
         output='screen',
         condition=IfCondition(run_gz),
+    )
+
+    gz_gui = ExecuteProcess(
+        cmd=['gz', 'sim', '-g'],
+        output='screen',
+        condition=IfCondition(LaunchConfiguration('gz_gui')),
     )
 
     px4_sitl = ExecuteProcess(
@@ -118,13 +153,24 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('run_px4')),
     )
 
+    clock_bridge = PythonExpression([
+        '"/world/" + "',
+        gz_world_name,
+        '" + "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock"',
+    ])
+    clock_remap = PythonExpression([
+        '"/world/" + "',
+        gz_world_name,
+        '" + "/clock:=/clock"',
+    ])
+
     bridge = ExecuteProcess(
         cmd=[
             'ros2',
             'run',
             'ros_gz_bridge',
             'parameter_bridge',
-            '/world/default/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+            clock_bridge,
             '/depth/tof_1@sensor_msgs/msg/Image[gz.msgs.Image',
             '/depth/tof_2@sensor_msgs/msg/Image[gz.msgs.Image',
             '/depth/tof_3@sensor_msgs/msg/Image[gz.msgs.Image',
@@ -133,15 +179,29 @@ def generate_launch_description() -> LaunchDescription:
             '/depth/tof_6@sensor_msgs/msg/Image[gz.msgs.Image',
             '/depth/tof_7@sensor_msgs/msg/Image[gz.msgs.Image',
             '/depth/tof_8@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/model/x500_small_tof_0/pose@geometry_msgs/msg/PoseStamped[gz.msgs.Pose',
             '--ros-args',
             '-r',
             '__node:=ros_gz_bridge',
             '-r',
-            '/world/default/clock:=/clock',
+            clock_remap,
         ],
         output='screen',
         condition=IfCondition(LaunchConfiguration('run_bridge')),
+    )
+
+    gz_pose = Node(
+        package='tof_slam_sim',
+        executable='gz_pose_info_to_pose_stamped',
+        name='gz_pose_info_to_pose_stamped',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'gz_world_name': gz_world_name,
+            'entity_name': 'x500_small_tof_0',
+            'pose_topic': '/model/x500_small_tof_0/pose',
+            'pose_frame_id': 'world',
+            'publish_hz': 30.0,
+        }],
     )
 
     micro_xrce_agent = ExecuteProcess(
@@ -158,8 +218,18 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{
             'use_sim_time': use_sim_time,
             'output_frame': 'robot/base_link',
+            # Visualization helper for RViz: draws "no return" beams at range_max.
+            'viz_output_topic': '/scan_merged_viz',
             'publish_hz': 10.0,
-            'max_range_m': 6.0,
+            # PX4's TOF-Ring model clips depth at 4m.
+            # Filter very-near returns (drone body) but keep close obstacles for Nav2.
+            'min_range_m': 0.35,
+            'max_range_m': 4.0,
+            'roi_row_start': 2,
+            # Prefer horizon rows to avoid ground returns when flying at ~1.0m altitude.
+            'roi_row_end': 5,
+            # Use a robust reduction across rows to avoid single-pixel self/ground hits.
+            'column_reduce': 'median',
         }],
     )
 
@@ -180,18 +250,25 @@ def generate_launch_description() -> LaunchDescription:
 
     ld = LaunchDescription()
     ld.add_action(use_sim_time_arg)
+    ld.add_action(world_arg)
+    ld.add_action(world_name_arg)
+    ld.add_action(gz_gui_arg)
     ld.add_action(use_visual_odometry_arg)
     ld.add_action(run_gz_arg)
     ld.add_action(px4_dir_arg)
     ld.add_action(run_px4_arg)
     ld.add_action(run_bridge_arg)
     ld.add_action(run_agent_arg)
+    ld.add_action(px4_model_pose_arg)
     ld.add_action(set_gz_resource_path)
     ld.add_action(set_px4_rc_path)
+    ld.add_action(set_px4_model_pose)
     ld.add_action(gz_sim)
+    ld.add_action(gz_gui)
     ld.add_action(px4_sitl)
     ld.add_action(bridge)
     ld.add_action(micro_xrce_agent)
     ld.add_action(tof_to_scan)
+    ld.add_action(gz_pose)
     ld.add_action(pose_to_px4_vo)
     return ld

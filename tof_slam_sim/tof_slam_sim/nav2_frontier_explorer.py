@@ -91,6 +91,15 @@ class Nav2FrontierExplorer(Node):
         self.clearance_min_m = float(self.declare_parameter('clearance_min_m', 0.6).value)
         self.clearance_penalty = float(self.declare_parameter('clearance_penalty', 12.0).value)
 
+        # Avoid retrying goals that Nav2 repeatedly aborts (e.g. no-path situations).
+        self.failed_goal_cooldown_sec = float(
+            self.declare_parameter('failed_goal_cooldown_sec', 90.0).value
+        )
+        self.failed_goal_separation_m = float(
+            self.declare_parameter('failed_goal_separation_m', 1.0).value
+        )
+        self.failed_goal_max = int(self.declare_parameter('failed_goal_max', 40).value)
+
         # Hard arena bounds (map frame) to prevent "chasing" unknown space outside perimeter walls.
         self.arena_enabled = bool(self.declare_parameter('arena_enabled', True).value)
         self.arena_min_x = float(self.declare_parameter('arena_min_x', -19.4).value)
@@ -146,6 +155,7 @@ class Nav2FrontierExplorer(Node):
         self._goal_handle = None
         self._result_future = None
         self._sent_time: Optional[Time] = None
+        self._active_goal_xy: Optional[tuple[float, float]] = None
         self._last_scan: Optional[LaserScan] = None
         self._crashed = False
         self._stuck_hits = 0
@@ -155,6 +165,7 @@ class Nav2FrontierExplorer(Node):
         self._stuck_sample_init = False
 
         self._goal_history: deque[tuple[float, float]] = deque(maxlen=30)
+        self._failed_goals: deque[tuple[float, float, float]] = deque(maxlen=max(1, self.failed_goal_max))
         self._last_plan = self.get_clock().now()
         self._arena_next_warn = 0.0
 
@@ -410,6 +421,12 @@ class Nav2FrontierExplorer(Node):
                         cq.append(nidx)
 
         offset_cells = max(1, int(math.ceil(self.goal_offset_m / meta.res)))
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        cooldown = max(0.0, float(getattr(self, 'failed_goal_cooldown_sec', 0.0)))
+        failed_sep = max(0.0, float(getattr(self, 'failed_goal_separation_m', 0.0)))
+        if cooldown > 0.0 and self._failed_goals:
+            while self._failed_goals and (now_s - self._failed_goals[0][2]) > cooldown:
+                self._failed_goals.popleft()
 
         def _pick_goal(
             min_frontier_len_m: float,
@@ -496,6 +513,12 @@ class Nav2FrontierExplorer(Node):
                         continue
 
                 goal_x, goal_y = meta.cell_to_world(goal_ix, goal_iy)
+                if cooldown > 0.0 and failed_sep > 0.0 and self._failed_goals:
+                    if any(
+                        math.hypot(goal_x - fx, goal_y - fy) < failed_sep
+                        for fx, fy, _ in self._failed_goals
+                    ):
+                        continue
                 dist = math.hypot(goal_x - robot_x, goal_y - robot_y)
                 if dist < min_goal_dist:
                     continue
@@ -557,6 +580,7 @@ class Nav2FrontierExplorer(Node):
         goal = NavigateToPose.Goal()
         goal.pose = pose
         self._sent_time = self.get_clock().now()
+        self._active_goal_xy = (gx, gy)
         self._goal_history.append((gx, gy))
         self.get_logger().info(f'Sending goal: ({gx:.2f}, {gy:.2f}) yaw={yaw:.2f}')
 
@@ -580,22 +604,40 @@ class Nav2FrontierExplorer(Node):
             self.get_logger().info('Goal reached.')
         elif status == GoalStatus.STATUS_ABORTED:
             self.get_logger().warning('Goal aborted by Nav2.')
+            self._mark_goal_failed(reason='aborted')
         elif status == GoalStatus.STATUS_CANCELED:
             self.get_logger().warning('Goal canceled.')
+            self._mark_goal_failed(reason='canceled')
         else:
             self.get_logger().info(f'Goal result status={status}')
         self._goal_handle = None
         self._result_future = None
         self._sent_time = None
+        self._active_goal_xy = None
 
     def _cancel_goal(self, *, reason: str) -> None:
         if self._goal_handle is None:
             return
         self.get_logger().warning(f'Canceling current goal ({reason}).')
+        self._mark_goal_failed(reason=reason)
         self._goal_handle.cancel_goal_async()
         self._goal_handle = None
         self._result_future = None
         self._sent_time = None
+        self._active_goal_xy = None
+
+    def _mark_goal_failed(self, *, reason: str) -> None:
+        xy = self._active_goal_xy
+        if xy is None:
+            return
+        cooldown = float(getattr(self, 'failed_goal_cooldown_sec', 0.0))
+        if cooldown <= 0.0:
+            return
+        now_s = self.get_clock().now().nanoseconds * 1e-9
+        self._failed_goals.append((float(xy[0]), float(xy[1]), float(now_s)))
+        self.get_logger().warning(
+            f'Blacklisting failed goal ({reason}) at ({xy[0]:.2f},{xy[1]:.2f}) for {cooldown:.0f}s.'
+        )
 
     def _maybe_detect_crash(self, *, goal_elapsed_sec: float) -> None:
         if not self.crash_detection_enabled or self._crashed:

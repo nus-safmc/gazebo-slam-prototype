@@ -24,9 +24,13 @@ def generate_launch_description():
     use_sim_time = LaunchConfiguration('use_sim_time')
     params_file = LaunchConfiguration('nav2_params')
     use_rviz = LaunchConfiguration('rviz')
+    world = LaunchConfiguration('world')
+    gz_world_name = LaunchConfiguration('gz_world_name')
+    gz_gui = LaunchConfiguration('gz_gui')
     target_alt_m = LaunchConfiguration('target_alt_m')
     vehicle_odometry_topic = LaunchConfiguration('vehicle_odometry_topic')
     monitor = LaunchConfiguration('monitor')
+    px4_model_pose = LaunchConfiguration('px4_model_pose')
 
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time',
@@ -43,10 +47,30 @@ def generate_launch_description():
         default_value='false',
         description='Launch RViz for visualization.',
     )
+    declare_world = DeclareLaunchArgument(
+        'world',
+        default_value='playfield_sparse.sdf',
+        description='World file under tof_slam_sim/worlds (e.g. playfield_sparse.sdf, playfield.sdf).',
+    )
+    declare_gz_world_name = DeclareLaunchArgument(
+        'gz_world_name',
+        default_value='playfield',
+        description='Gazebo world name (used for /world/<name>/clock).',
+    )
+    declare_gz_gui = DeclareLaunchArgument(
+        'gz_gui',
+        default_value='false',
+        description='Start Gazebo GUI (gz sim -g).',
+    )
     declare_target_alt = DeclareLaunchArgument(
         'target_alt_m',
-        default_value='1.5',
+        default_value='1.0',
         description='Target altitude (meters, +up in Gazebo/ROS ENU) for PX4 offboard.',
+    )
+    declare_px4_model_pose = DeclareLaunchArgument(
+        'px4_model_pose',
+        default_value='0,-2,0.2,0,0,0',
+        description='PX4_GZ_MODEL_POSE for spawning the vehicle (x,y,z,roll,pitch,yaw).',
     )
     declare_vehicle_odometry_topic = DeclareLaunchArgument(
         'vehicle_odometry_topic',
@@ -63,7 +87,13 @@ def generate_launch_description():
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([pkg_share, 'launch', 'px4_sitl.launch.py'])
         ]),
-        launch_arguments={'use_sim_time': use_sim_time}.items(),
+        launch_arguments={
+            'use_sim_time': use_sim_time,
+            'world': world,
+            'gz_world_name': gz_world_name,
+            'gz_gui': gz_gui,
+            'px4_model_pose': px4_model_pose,
+        }.items(),
     )
 
     px4_odom_to_odom = Node(
@@ -225,6 +255,10 @@ def generate_launch_description():
             'topics': [
                 '/clock:rosgraph_msgs/msg/Clock:best_effort',
                 '/fmu/out/vehicle_odometry:px4_msgs/msg/VehicleOdometry:best_effort',
+                '/fmu/out/vehicle_status:px4_msgs/msg/VehicleStatus:best_effort',
+                '/fmu/in/offboard_control_mode:px4_msgs/msg/OffboardControlMode:best_effort',
+                '/fmu/in/trajectory_setpoint:px4_msgs/msg/TrajectorySetpoint:best_effort',
+                '/model/x500_small_tof_0/pose:geometry_msgs/msg/PoseStamped:best_effort',
                 '/odom:nav_msgs/msg/Odometry:reliable',
                 '/tf:tf2_msgs/msg/TFMessage:reliable',
                 '/tf_static:tf2_msgs/msg/TFMessage:latched',
@@ -245,7 +279,7 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', PathJoinSubstitution([pkg_share, 'config', 'slam.rviz'])],
+        arguments=['-d', PathJoinSubstitution([pkg_share, 'config', 'slam_px4.rviz'])],
         parameters=[{'use_sim_time': use_sim_time}],
         condition=IfCondition(use_rviz),
     )
@@ -254,9 +288,13 @@ def generate_launch_description():
     ld.add_action(declare_use_sim_time)
     ld.add_action(declare_nav2_params)
     ld.add_action(declare_rviz)
+    ld.add_action(declare_world)
+    ld.add_action(declare_gz_world_name)
+    ld.add_action(declare_gz_gui)
     ld.add_action(declare_target_alt)
     ld.add_action(declare_vehicle_odometry_topic)
     ld.add_action(declare_monitor)
+    ld.add_action(declare_px4_model_pose)
     ld.add_action(px4_launch)
     ld.add_action(px4_odom_to_odom)
     ld.add_action(odom_tf)

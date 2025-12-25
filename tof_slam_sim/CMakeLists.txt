@@ -49,6 +49,7 @@ set(_python_nodes
   "tof_slam_sim.scan_merger:main:scan_merger"
   "tof_slam_sim.auto_pilot_node:main:auto_pilot"
   "tof_slam_sim.pose_to_odom:main:pose_to_odom"
+  "tof_slam_sim.gz_pose_info_to_pose_stamped:main:gz_pose_info_to_pose_stamped"
   "tof_slam_sim.pose_to_px4_visual_odometry:main:pose_to_px4_visual_odometry"
   "tof_slam_sim.px4_vehicle_odometry_to_odom:main:px4_vehicle_odometry_to_odom"
   "tof_slam_sim.odom_tf_publisher:main:odom_tf_publisher"
