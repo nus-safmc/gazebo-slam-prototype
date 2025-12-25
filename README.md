@@ -36,8 +36,13 @@ Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in t
 Once in the pixi shell, you can:
 
 **Launch the PX4 SITL environment:**
+   - Requires `MicroXRCEAgent` (PX4 uXRCE-DDS agent). On Ubuntu: `sudo apt install micro-xrce-dds-agent`
    ```bash
    pixi run -e jazzy px4_sitl
+   ```
+   To capture a live terminal log into `log/run_logs/`:
+   ```bash
+   pixi run -e jazzy px4_sitl_log
    ```
 
 **Viewing ROS topics**

@@ -55,6 +55,7 @@ class OdomTFPublisher(Node):
         self.declare_parameter('use_message_z', False)
         self.declare_parameter('z_override', 0.0)
         self.declare_parameter('smoothing_alpha', 1.0)
+        self.declare_parameter('fallback_rate_hz', 20.0)
 
         self._odom_topic = str(self.get_parameter('odom_topic').value)
         self._parent_frame = str(self.get_parameter('parent_frame').value).strip()
@@ -68,9 +69,18 @@ class OdomTFPublisher(Node):
 
         self._tf = TransformBroadcaster(self)
         self._state: Optional[_State] = None
+        self._received_odom = False
+
+        self._fallback_timer = None
+        fallback_rate_hz = float(self.get_parameter('fallback_rate_hz').value)
+        if self._parent_frame and self._child_frame and fallback_rate_hz > 0.0:
+            period = 1.0 / max(0.1, fallback_rate_hz)
+            self._fallback_timer = self.create_timer(period, self._publish_fallback_tf)
 
         qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
+            # Some simulators / bridges publish Odometry with sensor-data QoS (BEST_EFFORT).
+            # Use BEST_EFFORT so we can subscribe to both RELIABLE and BEST_EFFORT publishers.
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=50,
             durability=DurabilityPolicy.VOLATILE,
@@ -83,7 +93,27 @@ class OdomTFPublisher(Node):
             f'(yaw_only={self._yaw_only}, alpha={self._alpha:.2f}).'
         )
 
+    def _publish_fallback_tf(self) -> None:
+        if self._received_odom or not self._parent_frame or not self._child_frame:
+            return
+
+        t = TransformStamped()
+        t.header.stamp = self.get_clock().now().to_msg()
+        t.header.frame_id = self._parent_frame
+        t.child_frame_id = self._child_frame
+        t.transform.translation.x = 0.0
+        t.transform.translation.y = 0.0
+        t.transform.translation.z = self._z_override
+        t.transform.rotation.w = 1.0
+        self._tf.sendTransform(t)
+
     def _on_odom(self, msg: Odometry) -> None:
+        if not self._received_odom:
+            self._received_odom = True
+            if self._fallback_timer is not None:
+                self.destroy_timer(self._fallback_timer)
+                self._fallback_timer = None
+
         parent = self._parent_frame or str(msg.header.frame_id).strip() or 'odom'
         child = self._child_frame or str(msg.child_frame_id).strip() or 'base_footprint'
 

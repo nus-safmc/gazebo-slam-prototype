@@ -6,8 +6,9 @@ from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, ExecuteProcess, SetEnvironmentVariable
 from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.substitutions import FindPackageShare
 
 
 def _guess_px4_dir() -> str:
@@ -34,6 +35,16 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Use simulation time (Gazebo /clock).',
     )
+    use_visual_odometry_arg = DeclareLaunchArgument(
+        'use_visual_odometry',
+        default_value='true',
+        description='Publish Gazebo pose as PX4 vehicle_visual_odometry (EKF2 external vision aiding).',
+    )
+    run_gz_arg = DeclareLaunchArgument(
+        'run_gz',
+        default_value='true',
+        description='Start Gazebo (gz sim) server with PX4 default world.',
+    )
     px4_dir_arg = DeclareLaunchArgument(
         'px4_dir',
         default_value=_guess_px4_dir(),
@@ -56,6 +67,8 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     px4_dir = LaunchConfiguration('px4_dir')
+    run_gz = LaunchConfiguration('run_gz')
+    use_visual_odometry = LaunchConfiguration('use_visual_odometry')
     set_gz_resource_path = SetEnvironmentVariable(
         name='GZ_SIM_RESOURCE_PATH',
         value=[
@@ -63,6 +76,34 @@ def generate_launch_description() -> LaunchDescription:
             ':',
             PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'worlds']),
         ],
+    )
+
+    # Ensure PX4 SITL sources our repo's `px4-rc.params` (searched via PATH).
+    # This allows setting PX4 params (e.g., EKF2_OF_CTRL, NAV_DLL_ACT) without patching PX4.
+    tof_share = FindPackageShare('tof_slam_sim')
+    set_px4_rc_path = SetEnvironmentVariable(
+        name='PATH',
+        value=[
+            PathJoinSubstitution([tof_share, 'scripts']),
+            ':',
+            EnvironmentVariable('PATH'),
+        ],
+    )
+
+    gz_world_path = PathJoinSubstitution(
+        [px4_dir, 'Tools', 'simulation', 'gz', 'worlds', 'default.sdf']
+    )
+    gz_sim = ExecuteProcess(
+        cmd=[
+            'gz',
+            'sim',
+            '--verbose=1',
+            '-r',
+            '-s',
+            gz_world_path,
+        ],
+        output='screen',
+        condition=IfCondition(run_gz),
     )
 
     px4_sitl = ExecuteProcess(
@@ -77,22 +118,27 @@ def generate_launch_description() -> LaunchDescription:
         condition=IfCondition(LaunchConfiguration('run_px4')),
     )
 
-    bridge_tof = ExecuteProcess(
+    bridge = ExecuteProcess(
         cmd=[
             'ros2',
             'run',
             'ros_gz_bridge',
             'parameter_bridge',
-            '/clock@rosgraph_msgs/msg/Clock@gz.msgs.Clock',
-            '/depth/tof_1@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_2@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_3@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_4@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_5@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_6@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_7@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/depth/tof_8@sensor_msgs/msg/Image@gz.msgs.Image',
-            '/model/x500_small_tof_0/pose@geometry_msgs/msg/PoseStamped@gz.msgs.Pose',
+            '/world/default/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock',
+            '/depth/tof_1@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_2@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_3@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_4@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_5@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_6@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_7@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/depth/tof_8@sensor_msgs/msg/Image[gz.msgs.Image',
+            '/model/x500_small_tof_0/pose@geometry_msgs/msg/PoseStamped[gz.msgs.Pose',
+            '--ros-args',
+            '-r',
+            '__node:=ros_gz_bridge',
+            '-r',
+            '/world/default/clock:=/clock',
         ],
         output='screen',
         condition=IfCondition(LaunchConfiguration('run_bridge')),
@@ -112,18 +158,40 @@ def generate_launch_description() -> LaunchDescription:
         parameters=[{
             'use_sim_time': use_sim_time,
             'output_frame': 'robot/base_link',
+            'publish_hz': 10.0,
+            'max_range_m': 6.0,
         }],
+    )
+
+    pose_to_px4_vo = Node(
+        package='tof_slam_sim',
+        executable='pose_to_px4_visual_odometry',
+        name='pose_to_px4_visual_odometry',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'pose_topic': '/model/x500_small_tof_0/pose',
+            'px4_time_topic': '/fmu/out/vehicle_odometry',
+            'px4_visual_odometry_topic': '/fmu/in/vehicle_visual_odometry',
+            'publish_rate_hz': 30.0,
+        }],
+        condition=IfCondition(use_visual_odometry),
     )
 
     ld = LaunchDescription()
     ld.add_action(use_sim_time_arg)
+    ld.add_action(use_visual_odometry_arg)
+    ld.add_action(run_gz_arg)
     ld.add_action(px4_dir_arg)
     ld.add_action(run_px4_arg)
     ld.add_action(run_bridge_arg)
     ld.add_action(run_agent_arg)
     ld.add_action(set_gz_resource_path)
+    ld.add_action(set_px4_rc_path)
+    ld.add_action(gz_sim)
     ld.add_action(px4_sitl)
-    ld.add_action(bridge_tof)
+    ld.add_action(bridge)
     ld.add_action(micro_xrce_agent)
     ld.add_action(tof_to_scan)
+    ld.add_action(pose_to_px4_vo)
     return ld

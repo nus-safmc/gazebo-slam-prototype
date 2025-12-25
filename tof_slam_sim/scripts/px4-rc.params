@@ -1,0 +1,37 @@
+#!/bin/sh
+#
+# Parameter overrides for PX4 SITL runs started via this repo's ROS launch files.
+#
+# PX4 will source `px4-rc.params` from PATH during boot (see init.d-posix/rcS).
+# Our launch file prepends `$AMENT_PREFIX_PATH/share/tof_slam_sim/scripts` to PATH
+# so this file is picked up without patching PX4-Autopilot.
+#
+# Keep this file idempotent: always use `param set ...`.
+#
+
+# Nav2 is our "GCS" in this stack; don't block arming/offboard due to missing GCS link.
+param set NAV_DLL_ACT 0
+
+# Avoid EKF selector dependencies during SITL startup. Some airframes enable multi-EKF
+# (SENS_IMU_MODE=0), which expects estimator selector topics early and can trip
+# "Preflight Fail: ekf2 missing data". For this project we run a single EKF instance.
+param set SENS_IMU_MODE 1
+
+# External vision aiding (we publish Gazebo pose as `vehicle_visual_odometry`).
+param set EKF2_EV_CTRL 15
+
+# The x500*_tof airframes disable GPS, so enable optical flow aiding.
+param set EKF2_OF_CTRL 1
+
+# Sensor offsets for the `x500_small_tof` model (approx, FRD body frame).
+param set EKF2_OF_POS_X 0.0105
+param set EKF2_OF_POS_Y 0.0
+param set EKF2_OF_POS_Z 0.035
+
+# Range finder offset (LW20), FRD body frame.
+param set EKF2_RNG_POS_X 0.0
+param set EKF2_RNG_POS_Y 0.0
+param set EKF2_RNG_POS_Z 0.02765
+
+# The Gazebo x500_small_tof setup often has no mag data; don't block arming on a missing compass.
+param set SYS_HAS_MAG 0

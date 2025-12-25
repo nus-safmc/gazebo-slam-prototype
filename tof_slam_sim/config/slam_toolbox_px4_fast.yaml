@@ -1,0 +1,49 @@
+# PX4-focused fast SLAM profile.
+#
+# Key difference vs `slam_toolbox_fast.yaml`:
+# - Lower travel thresholds so mapping starts immediately even if the vehicle
+#   hasn't moved much yet (PX4 may take a while before offboard/nav starts).
+slam_toolbox:
+  ros__parameters:
+    autostart: true
+    mode: mapping
+    use_sim_time: true
+
+    odom_frame: robot/odom
+    map_frame: robot/map
+    base_frame: robot/base_footprint
+    scan_topic: /scan_merged
+
+    transform_timeout: 0.2
+    transform_publish_period: 0.10
+    tf_buffer_duration: 30.0
+    map_update_interval: 2.0
+
+    resolution: 0.10
+    min_laser_range: 0.05
+    max_laser_range: 6.0
+    minimum_time_interval: 0.20
+    smear_deviation: 0.25
+
+    # Allow map initialization without movement.
+    minimum_travel_distance: 0.00
+    minimum_travel_heading: 0.00
+
+    scan_buffer_size: 5
+    scan_buffer_maximum_scan_distance: 12.0
+    link_match_minimum_response_fine: 0.6
+    link_scan_maximum_distance: 6.0
+
+    do_loop_closing: false
+
+    solver_plugin: solver_plugins::CeresSolver
+    ceres_linear_solver: SPARSE_NORMAL_CHOLESKY
+    ceres_preconditioner: SCHUR_JACOBI
+    ceres_trust_strategy: LEVENBERG_MARQUARDT
+    ceres_dogleg_type: TRADITIONAL_DOGLEG
+    ceres_loss_function: HuberLoss
+
+    debug_logging: false
+    throttle_scans: 1
+    enable_interactive_mode: false
+

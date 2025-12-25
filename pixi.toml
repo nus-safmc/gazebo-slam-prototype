@@ -118,16 +118,24 @@ symforce = "*"
 clean   = "rm -rf build log"
 rebuild = "pixi run -e jazzy clean && pixi run -e jazzy build"
 cleanup_sim = "bash scripts/cleanup_sim.sh"
+build_microxrce_agent = "bash scripts/build_microxrce_agent.sh"
 old_sim    = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim sim_with_bridge.launch.py"
 slam    = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim slam_test.launch.py"
 build_px4 = "cd PX4-Autopilot && DONT_RUN=1 make px4_sitl gz_x500_small_tof CMAKE_ARGS=\"-DCONFIG_WARN_AS_ERROR=n\""
 run_px4 = "bash scripts/cleanup_sim.sh && cd PX4-Autopilot && make px4_sitl gz_x500_small_tof CMAKE_ARGS=\"-DCONFIG_WARN_AS_ERROR=n\""
-px4_sitl = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim px4_sitl.launch.py"
-px4_sitl_slam = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim px4_sitl_slam.launch.py"
-nav2_explore = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim nav2_explore.launch.py"
-bridge_tof = """
-ros2 run ros_gz_bridge parameter_bridge \
-/depth/tof_1@sensor_msgs/msg/Image@gz.msgs.Image \
+px4_sitl = "bash scripts/run_px4_sitl.sh"
+px4_sitl_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_sitl bash scripts/run_px4_sitl.sh"
+px4_sitl_slam = "bash scripts/run_px4_sitl_slam.sh"
+px4_sitl_slam_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_sitl_slam bash scripts/run_px4_sitl_slam.sh"
+	px4_nav2_explore = "bash scripts/run_px4_nav2_explore.sh"
+	px4_nav2_explore_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_nav2_explore bash scripts/run_px4_nav2_explore.sh"
+	tail_log = "bash scripts/tail_latest_log.sh"
+	verify_tf_rates = "bash scripts/verify_tf_rates.sh"
+	verify_tf_rates_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh verify_tf_rates bash scripts/verify_tf_rates.sh"
+	nav2_explore = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim nav2_explore.launch.py"
+	bridge_tof = """
+	ros2 run ros_gz_bridge parameter_bridge \
+	/depth/tof_1@sensor_msgs/msg/Image@gz.msgs.Image \
 /depth/tof_2@sensor_msgs/msg/Image@gz.msgs.Image \
 /depth/tof_3@sensor_msgs/msg/Image@gz.msgs.Image \
 /depth/tof_4@sensor_msgs/msg/Image@gz.msgs.Image \

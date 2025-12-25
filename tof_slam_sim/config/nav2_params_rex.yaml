@@ -47,8 +47,8 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.35
-      yaw_goal_tolerance: 0.6
+      xy_goal_tolerance: 0.20
+      yaw_goal_tolerance: 0.5
 
     FollowPath:
       # DWB is more robust than MPPI in this low-resolution ToF setup and avoids
@@ -81,7 +81,7 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.35
+      xy_goal_tolerance: 0.20
       trans_stopped_velocity: 0.05
       short_circuit_trajectory_evaluation: true
 
@@ -129,7 +129,7 @@ local_costmap:
         footprint_clearing_enabled: True
         observation_sources: scan
         scan:
-          topic: scan_merged
+          topic: /scan_merged
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -137,7 +137,7 @@ local_costmap:
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
           obstacle_max_range: 5.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.25
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.5
@@ -154,7 +154,7 @@ global_costmap:
       robot_base_frame: robot/base_footprint
       robot_radius: 0.20
       resolution: 0.10
-      track_unknown_space: true
+      track_unknown_space: false
       # Combine the fused global /map with each robot's live scan so planners
       # don't route through newly-seen obstacles (which causes MPPI failures).
       plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
@@ -169,7 +169,7 @@ global_costmap:
         footprint_clearing_enabled: True
         observation_sources: scan
         scan:
-          topic: scan_merged
+          topic: /scan_merged
           max_obstacle_height: 2.0
           clearing: True
           marking: True
@@ -177,7 +177,7 @@ global_costmap:
           raytrace_max_range: 6.0
           raytrace_min_range: 0.0
           obstacle_max_range: 5.5
-          obstacle_min_range: 0.0
+          obstacle_min_range: 0.25
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.5
@@ -302,7 +302,7 @@ collision_monitor:
     observation_sources: ["scan"]
     scan:
       type: "scan"
-      topic: "scan_merged"
+      topic: "/scan_merged"
       enabled: True
 
 docking_server:

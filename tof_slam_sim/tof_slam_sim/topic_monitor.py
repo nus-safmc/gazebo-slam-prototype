@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 from typing import Callable, Dict, List, Sequence, Set, Tuple
 
 import rclpy
@@ -28,7 +29,9 @@ except ImportError:  # pragma: no cover
         SubscriptionEventCallbacks,
     )
 from rclpy.time import Time
+from nav_msgs.msg import OccupancyGrid, Odometry
 from rosidl_runtime_py.utilities import get_message
+from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformListener, TransformException
 
 
@@ -73,6 +76,8 @@ class TopicState:
     count_at_last_report: int = 0
     incompatible_qos_total: int = 0
     last_incompatible_policy: QoSPolicyKind | None = None
+    last_summary: str | None = None
+    last_detail_error: str | None = None
 
 
 @dataclass
@@ -182,10 +187,10 @@ class TopicMonitor(Node):
 
             def _make_callback(topic_name: str) -> Callable[[object], None]:
                 def _cb(msg: object) -> None:
-                    del msg
                     st = self._topic_states[topic_name]
                     st.last_msg_time = self._clock.now()
                     st.total_count += 1
+                    self._update_details(st, msg)
 
                 return _cb
 
@@ -237,6 +242,76 @@ class TopicMonitor(Node):
         self._report_timer = self.create_timer(
             max(0.1, report_period_sec), self._report_status
         )
+
+    def _update_details(self, state: TopicState, msg: object) -> None:
+        """Attach lightweight, human-readable info about key messages."""
+
+        try:
+            if isinstance(msg, OccupancyGrid):
+                width = int(msg.info.width)
+                height = int(msg.info.height)
+                resolution = float(msg.info.resolution)
+                data_len = len(msg.data)
+                expected = width * height
+
+                frame_id = str(msg.header.frame_id)
+                stamp = msg.header.stamp
+                stamp_s = float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+                state.last_summary = (
+                    f'frame={frame_id} stamp={stamp_s:.3f}s '
+                    f'w={width} h={height} res={resolution:.3f} len={data_len}'
+                )
+
+                problems: List[str] = []
+                if width <= 0 or height <= 0:
+                    problems.append('width/height<=0')
+                if not math.isfinite(resolution) or resolution <= 0.0:
+                    problems.append('bad resolution')
+                if expected != data_len:
+                    problems.append(f'len(data)!={expected}')
+
+                state.last_detail_error = (
+                    'MALFORMED ' + ', '.join(problems) if problems else None
+                )
+                return
+
+            if isinstance(msg, LaserScan):
+                frame_id = str(msg.header.frame_id)
+                stamp = msg.header.stamp
+                stamp_s = float(stamp.sec) + float(stamp.nanosec) * 1e-9
+
+                ranges = list(msg.ranges)
+                finite = [r for r in ranges if math.isfinite(r)]
+                finite = [r for r in finite if msg.range_min <= r <= msg.range_max]
+
+                state.last_summary = (
+                    f'frame={frame_id} stamp={stamp_s:.3f}s '
+                    f'n={len(ranges)} finite={len(finite)} '
+                    f'range_min={msg.range_min:.2f} range_max={msg.range_max:.2f}'
+                )
+
+                if finite:
+                    state.last_summary += f' min={min(finite):.2f} max={max(finite):.2f}'
+                state.last_detail_error = None
+                return
+
+            if isinstance(msg, Odometry):
+                frame_id = str(msg.header.frame_id)
+                child = str(msg.child_frame_id)
+                stamp = msg.header.stamp
+                stamp_s = float(stamp.sec) + float(stamp.nanosec) * 1e-9
+                p = msg.pose.pose.position
+
+                state.last_summary = (
+                    f'frame={frame_id}->{child} stamp={stamp_s:.3f}s '
+                    f'pos=({p.x:.2f},{p.y:.2f},{p.z:.2f})'
+                )
+                state.last_detail_error = None
+                return
+        except Exception as exc:  # pragma: no cover - defensive
+            state.last_summary = None
+            state.last_detail_error = f'detail error: {exc}'
 
     def _make_incompatible_qos_cb(
         self, topic_name: str
@@ -363,6 +438,17 @@ class TopicMonitor(Node):
                         f'{parent}->{child}: MISSING ({state.last_exception}) '
                         f'(+{delta} lookups, {status})'
                     )
+
+        # Add small content summaries for high-value topics.
+        for topic_name in ('/map', '/scan_merged', '/odom'):
+            state = self._topic_states.get(topic_name)
+            if state is None:
+                continue
+            if state.last_summary is not None:
+                report_lines.append(f'{topic_name}: {state.last_summary}')
+            if state.last_detail_error is not None:
+                report_lines.append(f'{topic_name}: {state.last_detail_error}')
+                warn = True
 
         message = 'Topic status:\n' + '\n'.join(f'  - {line}' for line in report_lines)
         if warn:
