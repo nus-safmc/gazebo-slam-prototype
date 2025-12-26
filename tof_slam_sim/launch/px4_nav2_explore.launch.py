@@ -31,6 +31,7 @@ def generate_launch_description():
     vehicle_odometry_topic = LaunchConfiguration('vehicle_odometry_topic')
     monitor = LaunchConfiguration('monitor')
     px4_model_pose = LaunchConfiguration('px4_model_pose')
+    slam_config = LaunchConfiguration('slam_config')
 
     declare_use_sim_time = DeclareLaunchArgument(
         'use_sim_time',
@@ -49,8 +50,8 @@ def generate_launch_description():
     )
     declare_world = DeclareLaunchArgument(
         'world',
-        default_value='playfield_sparse.sdf',
-        description='World file under tof_slam_sim/worlds (e.g. playfield_sparse.sdf, playfield.sdf).',
+        default_value='playfield_px4_small.sdf',
+        description='World file under tof_slam_sim/worlds (PX4-safe defaults: playfield_px4_small.sdf).',
     )
     declare_gz_world_name = DeclareLaunchArgument(
         'gz_world_name',
@@ -81,6 +82,11 @@ def generate_launch_description():
         'monitor',
         default_value='true',
         description='Run topic/TF health monitor (prints warnings every few seconds).',
+    )
+    declare_slam_config = DeclareLaunchArgument(
+        'slam_config',
+        default_value='slam_toolbox_px4_robust.yaml',
+        description='SLAM Toolbox params file under tof_slam_sim/config (try slam_toolbox_px4_robust.yaml or slam_toolbox_px4_fast.yaml).',
     )
 
     px4_launch = IncludeLaunchDescription(
@@ -143,7 +149,7 @@ def generate_launch_description():
         parameters=[{'use_sim_time': use_sim_time}],
     )
 
-    slam_toolbox_params = PathJoinSubstitution([pkg_share, 'config', 'slam_toolbox_px4_fast.yaml'])
+    slam_toolbox_params = PathJoinSubstitution([pkg_share, 'config', slam_config])
     slam_toolbox = LifecycleNode(
         package='slam_toolbox',
         executable='sync_slam_toolbox_node',
@@ -189,18 +195,6 @@ def generate_launch_description():
         )
     )
 
-    map_tf_fallback = Node(
-        package='tof_slam_sim',
-        executable='map_tf_fallback',
-        name='map_tf_fallback',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            'parent_frame': 'robot/map',
-            'child_frame': 'robot/odom',
-            'rate_hz': 10.0,
-        }],
-    )
-
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([nav2_share, 'launch', 'navigation_launch.py'])
@@ -223,10 +217,21 @@ def generate_launch_description():
             'map_topic': '/map',
             'goal_frame': 'robot/map',
             'base_frame': 'robot/base_footprint',
-            'robot_radius_m': 0.20,
+            # Be conservative: keep more clearance around obstacles for the PX4 x500 model.
+            'robot_radius_m': 0.30,
             'min_frontier_cluster_size': 6,
-            'goal_timeout_sec': 25.0,
-            'replan_period_sec': 2.0,
+            'goal_timeout_sec': 35.0,
+            'replan_period_sec': 2.5,
+            # Pick goals further inside free space and penalize near-obstacle frontiers.
+            'goal_offset_m': 1.0,
+            'clearance_min_m': 0.9,
+            'clearance_weight': 10.0,
+            'clearance_penalty': 20.0,
+            # Match `playfield_px4_small.sdf` interior bounds (walls at +/-3 with 0.4m thickness).
+            'arena_min_x': -2.6,
+            'arena_max_x': 2.6,
+            'arena_min_y': -2.6,
+            'arena_max_y': 2.6,
         }],
     )
 
@@ -295,6 +300,7 @@ def generate_launch_description():
     ld.add_action(declare_vehicle_odometry_topic)
     ld.add_action(declare_monitor)
     ld.add_action(declare_px4_model_pose)
+    ld.add_action(declare_slam_config)
     ld.add_action(px4_launch)
     ld.add_action(px4_odom_to_odom)
     ld.add_action(odom_tf)
@@ -302,7 +308,6 @@ def generate_launch_description():
     ld.add_action(slam_toolbox)
     ld.add_action(slam_configure)
     ld.add_action(slam_activate)
-    ld.add_action(map_tf_fallback)
     ld.add_action(nav2_launch)
     ld.add_action(explorer)
     ld.add_action(px4_offboard)

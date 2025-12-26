@@ -125,18 +125,6 @@ def generate_launch_description():
         )
     )
 
-    map_tf_fallback = Node(
-        package='tof_slam_sim',
-        executable='map_tf_fallback',
-        name='map_tf_fallback',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            'parent_frame': 'robot/map',
-            'child_frame': 'robot/odom',
-            'rate_hz': 10.0,
-        }],
-    )
-
     static_basefoot_to_baselink = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -167,7 +155,6 @@ def generate_launch_description():
     ld.add_action(slam_toolbox)
     ld.add_action(slam_configure)
     ld.add_action(slam_activate)
-    ld.add_action(map_tf_fallback)
     ld.add_action(static_basefoot_to_baselink)
     ld.add_action(rviz)
     return ld

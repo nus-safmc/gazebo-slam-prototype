@@ -50,6 +50,9 @@ class TofToScan(Node):
 
         self.h_fov = math.pi/4.0
         self.v_fov = math.pi/4.0
+        self.output_num_points = int(self.declare_parameter('output_num_points', 360).value)
+        self.output_num_points = max(8, self.output_num_points)
+        self.output_fill_bins = bool(self.declare_parameter('output_fill_bins', True).value)
         self.ring_radius_m = float(
             self.declare_parameter('ring_radius_m', 0.05).get_parameter_value().double_value
         )
@@ -70,6 +73,34 @@ class TofToScan(Node):
             .strip()
             .lower()
         )
+        self.min_valid_per_column = int(self.declare_parameter('min_valid_per_column', 1).value)
+        self.min_valid_per_column = max(1, self.min_valid_per_column)
+        self.far_clip_margin_m = float(self.declare_parameter('far_clip_margin_m', 0.01).value)
+        self.far_clip_margin_m = max(0.0, self.far_clip_margin_m)
+
+        # Optional angular-domain filtering to reduce single-beam speckle from sparse ToF scans.
+        self.angular_filter_window = int(self.declare_parameter('angular_filter_window', 1).value)
+        self.angular_filter_window = max(1, self.angular_filter_window)
+        if self.angular_filter_window % 2 == 0:
+            self.angular_filter_window += 1
+        self.angular_outlier_thresh_m = float(
+            self.declare_parameter('angular_outlier_thresh_m', 0.6).value
+        )
+        self.angular_outlier_thresh_m = max(0.0, self.angular_outlier_thresh_m)
+        self.angular_fill_gaps = bool(self.declare_parameter('angular_fill_gaps', False).value)
+        self.angular_fill_min_neighbors = int(
+            self.declare_parameter('angular_fill_min_neighbors', 3).value
+        )
+        self.angular_fill_min_neighbors = max(1, self.angular_fill_min_neighbors)
+        self.angular_fill_spread_max_m = float(
+            self.declare_parameter('angular_fill_spread_max_m', 0.5).value
+        )
+        self.angular_fill_spread_max_m = max(0.0, self.angular_fill_spread_max_m)
+
+        # Optional temporal smoothing (median) over the last N scans to reduce flicker.
+        self.temporal_window = int(self.declare_parameter('temporal_window', 1).value)
+        self.temporal_window = max(1, self.temporal_window)
+        self._temporal: list[list[float]] = []
 
         self.cv_bridge = CvBridge()
         self._scaled_mm_sensors: set[int] = set()
@@ -104,6 +135,38 @@ class TofToScan(Node):
     def _stamp_ns(stamp) -> int:
         return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
+    def _angular_filter(self, ranges: list[float]) -> list[float]:
+        window = int(self.angular_filter_window)
+        if window <= 1 or len(ranges) < 3:
+            return ranges
+
+        half = window // 2
+        n = len(ranges)
+        out = list(ranges)
+        for i in range(n):
+            neigh: list[float] = []
+            for off in range(-half, half + 1):
+                val = ranges[(i + off) % n]
+                if math.isfinite(val):
+                    neigh.append(float(val))
+            if not neigh:
+                continue
+
+            med = float(np.median(np.asarray(neigh, dtype=np.float32)))
+            cur = ranges[i]
+            if math.isfinite(cur):
+                if abs(float(cur) - med) > float(self.angular_outlier_thresh_m):
+                    out[i] = med
+            else:
+                if not self.angular_fill_gaps:
+                    continue
+                if len(neigh) < self.angular_fill_min_neighbors:
+                    continue
+                if (max(neigh) - min(neigh)) > float(self.angular_fill_spread_max_m):
+                    continue
+                out[i] = med
+        return out
+
     def _publish_scan(self) -> None:
         images = self._latest
 
@@ -130,7 +193,7 @@ class TofToScan(Node):
             merged_scan.header.frame_id = self.output_frame
             merged_scan.angle_min = 0.0
 
-            num_points = 64
+            num_points = int(self.output_num_points)
             merged_scan.angle_increment = (2.0 * math.pi) / float(num_points)
             merged_scan.angle_max = merged_scan.angle_min + merged_scan.angle_increment * (num_points - 1)
             merged_scan.time_increment = 0.0
@@ -142,6 +205,8 @@ class TofToScan(Node):
             merged_scan.range_max = self.maxrange + self.ring_radius_m
 
             ranges = [float('inf')] * num_points
+            bin_width = self.h_fov / 8.0
+            half_bin = 0.5 * bin_width
 
             for sensor_index in range(8):
                 depth_image = images[sensor_index]
@@ -173,13 +238,14 @@ class TofToScan(Node):
                     pass
 
                 img_ranges = []
+                far_clip_threshold = max(self.minrange, self.maxrange - float(self.far_clip_margin_m))
                 for col in range(8):
                     col_depths = image[row_start:row_end, col]
                     valid_depths = col_depths[
                         (col_depths >= self.minrange) & 
-                        (col_depths <= self.maxrange)
+                        (col_depths <= far_clip_threshold)
                     ]
-                    if len(valid_depths) > 0:
+                    if len(valid_depths) >= self.min_valid_per_column:
                         reduce = self.column_reduce
                         if reduce == 'max':
                             img_ranges.append(float(np.max(valid_depths)))
@@ -199,8 +265,9 @@ class TofToScan(Node):
                         continue
 
                     # Gazebo's depth camera reports values at the far clip for "no return".
-                    # Treat that as infinity so Nav2 clears space without marking a fake wall.
-                    if r >= (self.maxrange - 1e-3):
+                    # Treat anything close to the configured max_range_m as "no return" so SLAM
+                    # and Nav2 don't integrate a phantom wall at the far-clip distance.
+                    if r >= (self.maxrange - float(self.far_clip_margin_m)):
                         continue
 
                     # Horizontal beam angle relative to this sensor (centered bins).
@@ -208,20 +275,55 @@ class TofToScan(Node):
                     theta = sensor_angle + theta_rel
 
                     # Normalize to [0, 2*pi)
-                    while theta < 0.0:
-                        theta += 2.0 * math.pi
-                    while theta >= 2.0 * math.pi:
-                        theta -= 2.0 * math.pi
+                    theta = float(theta % (2.0 * math.pi))
 
-                    # Project the hit point into base_link frame and compute range from base origin.
-                    px = sx + float(r) * math.cos(theta)
-                    py = sy + float(r) * math.sin(theta)
-                    r_center = math.hypot(px, py)
+                    if self.output_fill_bins:
+                        theta_start = float((theta - half_bin) % (2.0 * math.pi))
+                        theta_end = float((theta + half_bin) % (2.0 * math.pi))
 
-                    idx = int((theta - merged_scan.angle_min) / merged_scan.angle_increment)
-                    if 0 <= idx < num_points:
-                        ranges[idx] = min(ranges[idx], r_center)
+                        def _fill_span(a0: float, a1: float) -> None:
+                            idx0 = int(math.floor((a0 - merged_scan.angle_min) / merged_scan.angle_increment))
+                            idx1 = int(math.floor((a1 - merged_scan.angle_min) / merged_scan.angle_increment))
+                            idx0 = max(0, min(num_points - 1, idx0))
+                            idx1 = max(0, min(num_points - 1, idx1))
+                            for idx in range(idx0, idx1 + 1):
+                                ang = merged_scan.angle_min + float(idx) * merged_scan.angle_increment
+                                px = sx + float(r) * math.cos(ang)
+                                py = sy + float(r) * math.sin(ang)
+                                r_center = math.hypot(px, py)
+                                ranges[idx] = min(ranges[idx], r_center)
 
+                        if theta_start <= theta_end:
+                            _fill_span(theta_start, theta_end)
+                        else:
+                            _fill_span(theta_start, (2.0 * math.pi) - 1e-9)
+                            _fill_span(0.0, theta_end)
+                    else:
+                        # Project the hit point into base_link frame and compute range from base origin.
+                        px = sx + float(r) * math.cos(theta)
+                        py = sy + float(r) * math.sin(theta)
+                        r_center = math.hypot(px, py)
+
+                        idx = int((theta - merged_scan.angle_min) / merged_scan.angle_increment)
+                        if 0 <= idx < num_points:
+                            ranges[idx] = min(ranges[idx], r_center)
+
+            ranges = self._angular_filter(ranges)
+
+            if self.temporal_window > 1:
+                self._temporal.append(list(ranges))
+                if len(self._temporal) > self.temporal_window:
+                    self._temporal.pop(0)
+
+                # Median of finite ranges across history (leave inf when no finite samples).
+                smoothed: list[float] = []
+                for i in range(num_points):
+                    vals = [float(r[i]) for r in self._temporal if math.isfinite(r[i])]
+                    if not vals:
+                        smoothed.append(float('inf'))
+                    else:
+                        smoothed.append(float(np.median(np.asarray(vals, dtype=np.float32))))
+                ranges = smoothed
             merged_scan.ranges = ranges
             self.pub.publish(merged_scan)
 

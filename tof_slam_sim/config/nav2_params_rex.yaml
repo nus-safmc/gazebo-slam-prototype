@@ -57,22 +57,22 @@ controller_server:
       debug_trajectory_details: false
 
       # Velocity limits (holonomic)
-      min_vel_x: -0.15
-      max_vel_x: 0.25
-      min_vel_y: -0.20
-      max_vel_y: 0.20
-      max_vel_theta: 0.9
+      min_vel_x: -0.08
+      max_vel_x: 0.14
+      min_vel_y: -0.08
+      max_vel_y: 0.10
+      max_vel_theta: 0.5
       min_speed_xy: 0.0
-      max_speed_xy: 0.25
+      max_speed_xy: 0.14
       min_speed_theta: 0.0
 
       # Accel limits
-      acc_lim_x: 0.8
-      acc_lim_y: 0.8
-      acc_lim_theta: 1.2
-      decel_lim_x: -0.8
-      decel_lim_y: -0.8
-      decel_lim_theta: -1.2
+      acc_lim_x: 0.3
+      acc_lim_y: 0.3
+      acc_lim_theta: 0.7
+      decel_lim_x: -0.3
+      decel_lim_y: -0.3
+      decel_lim_theta: -0.7
 
       vx_samples: 15
       vy_samples: 11
@@ -89,7 +89,7 @@ controller_server:
         "RotateToGoal", "Oscillation", "BaseObstacle",
         "GoalAlign", "PathAlign", "PathDist", "GoalDist"
       ]
-      BaseObstacle.scale: 0.03
+      BaseObstacle.scale: 0.08
       PathAlign.scale: 24.0
       PathAlign.forward_point_distance: 0.325
       GoalAlign.scale: 20.0
@@ -113,7 +113,7 @@ local_costmap:
       width: 7
       height: 7
       resolution: 0.10
-      robot_radius: 0.20
+      robot_radius: 0.30
       # Include the fused global /map as a static layer so the controller also
       # respects the perimeter keepout band (otherwise it can drive into the
       # keepout and Nav2 will get stuck with "Start occupied").
@@ -141,7 +141,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.45
+        inflation_radius: 0.85
       always_send_full_costmap: True
 
 global_costmap:
@@ -152,36 +152,21 @@ global_costmap:
       publish_frequency: 0.5
       global_frame: robot/map
       robot_base_frame: robot/base_footprint
-      robot_radius: 0.20
+      robot_radius: 0.30
       resolution: 0.10
       track_unknown_space: false
-      # Combine the fused global /map with each robot's live scan so planners
-      # don't route through newly-seen obstacles (which causes MPPI failures).
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      # Use the SLAM /map as the global source of obstacles; keep live scan
+      # processing in the local costmap for more stable planning.
+      plugins: ["static_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_topic: /map
         subscribe_to_updates: true
         map_subscribe_transient_local: True
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
-        footprint_clearing_enabled: True
-        observation_sources: scan
-        scan:
-          topic: /scan_merged
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 4.1
-          raytrace_min_range: 0.0
-          obstacle_max_range: 4.0
-          obstacle_min_range: 0.35
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.55
+        inflation_radius: 1.00
       always_send_full_costmap: True
 
 planner_server:
@@ -194,7 +179,7 @@ planner_server:
       plugin: "nav2_smac_planner::SmacPlanner2D"
       tolerance: 0.35
       allow_unknown: true
-      # The arena is now 40×40m; downsample + higher iteration cap keeps planning reliable.
+      # Keep planning reliable in large open areas.
       downsample_costmap: false
       downsampling_factor: 1
       max_iterations: 200000
@@ -256,10 +241,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.3, 0.25, 0.9]
-    min_velocity: [-0.15, -0.25, -0.9]
-    max_accel: [0.8, 0.8, 1.2]
-    max_decel: [-0.8, -0.8, -1.2]
+    max_velocity: [0.14, 0.10, 0.5]
+    min_velocity: [-0.08, -0.10, -0.5]
+    max_accel: [0.3, 0.3, 0.7]
+    max_decel: [-0.3, -0.3, -0.7]
     odom_topic: odom
     odom_duration: 0.15
     deadband_velocity: [0.0, 0.0, 0.0]
@@ -277,19 +262,17 @@ collision_monitor:
     source_timeout: 1.0
     base_shift_correction: True
     stop_pub_timeout: 2.0
-    # Use a predictive approach polygon; a hard StopZone tended to freeze robots
-    # in cluttered starts and prevented multi-robot motion.
-    polygons: ["FootprintApproach"]
+    polygons: ["StopZone", "FootprintApproach"]
     # Hard safety zone for near-field obstacles (walls/props/other robots).
     StopZone:
       type: "polygon"
       # Square around base_footprint in meters.
-      # Keep this tight; too-large stop zones cause robots to freeze near normal obstacles.
-      points: "[[0.28, 0.28], [0.28, -0.28], [-0.28, -0.28], [-0.28, 0.28]]"
+      # PX4 drone is larger than the rex_quadcopter footprint; keep a wider stop zone.
+      points: "[[0.45, 0.45], [0.45, -0.45], [-0.45, -0.45], [-0.45, 0.45]]"
       action_type: "stop"
       min_points: 4
       visualize: False
-      enabled: False
+      enabled: True
     FootprintApproach:
       type: "polygon"
       action_type: "approach"

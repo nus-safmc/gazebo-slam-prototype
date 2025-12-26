@@ -90,6 +90,12 @@ class Nav2FrontierExplorer(Node):
         self.clearance_weight = float(self.declare_parameter('clearance_weight', 6.0).value)
         self.clearance_min_m = float(self.declare_parameter('clearance_min_m', 0.6).value)
         self.clearance_penalty = float(self.declare_parameter('clearance_penalty', 12.0).value)
+        # If SLAM has only a tiny patch of known space, naive frontier selection can keep
+        # returning goals within Nav2's goal tolerance (so the robot never moves).
+        self.fallback_min_goal_dist_m = float(
+            self.declare_parameter('fallback_min_goal_dist_m', 0.6).value
+        )
+        self.fallback_min_goal_dist_m = max(0.0, self.fallback_min_goal_dist_m)
 
         # Avoid retrying goals that Nav2 repeatedly aborts (e.g. no-path situations).
         self.failed_goal_cooldown_sec = float(
@@ -432,6 +438,8 @@ class Nav2FrontierExplorer(Node):
             min_frontier_len_m: float,
             min_goal_dist: float,
             clearance_min: float,
+            *,
+            enforce_clearance: bool,
         ) -> Optional[tuple[float, float]]:
             best_score = -1e12
             best_goal: Optional[tuple[float, float]] = None
@@ -485,30 +493,50 @@ class Nav2FrontierExplorer(Node):
 
                 goal_idx = goal_iy * meta.width + goal_ix
                 if not free[goal_idx]:
-                    # Search a small neighborhood for a free cell.
+                    # Sparse maps (few beams / lots of unknown) often produce thin "spoke"
+                    # patterns of free cells. Try sliding back along the inward direction
+                    # until we hit free space, then (optionally) fall back to a local search.
                     found = False
-                    for radius in range(1, 6):
-                        for dx in range(-radius, radius + 1):
-                            for dy in range(-radius, radius + 1):
-                                nx = goal_ix + dx
-                                ny = goal_iy + dy
-                                if (
-                                    nx <= 0
-                                    or nx >= meta.width - 1
-                                    or ny <= 0
-                                    or ny >= meta.height - 1
-                                ):
-                                    continue
-                                nidx = ny * meta.width + nx
-                                if free[nidx]:
-                                    goal_ix, goal_iy = nx, ny
-                                    goal_idx = nidx
-                                    found = True
+                    for step in range(offset_cells, -1, -1):
+                        nx = int(round(rep_x + vx * step))
+                        ny = int(round(rep_y + vy * step))
+                        if (
+                            nx <= 0
+                            or nx >= meta.width - 1
+                            or ny <= 0
+                            or ny >= meta.height - 1
+                        ):
+                            continue
+                        nidx = ny * meta.width + nx
+                        if free[nidx]:
+                            goal_ix, goal_iy = nx, ny
+                            goal_idx = nidx
+                            found = True
+                            break
+
+                    if not found:
+                        for radius in range(1, 10):
+                            for dx in range(-radius, radius + 1):
+                                for dy in range(-radius, radius + 1):
+                                    nx = rep_x + dx
+                                    ny = rep_y + dy
+                                    if (
+                                        nx <= 0
+                                        or nx >= meta.width - 1
+                                        or ny <= 0
+                                        or ny >= meta.height - 1
+                                    ):
+                                        continue
+                                    nidx = ny * meta.width + nx
+                                    if free[nidx]:
+                                        goal_ix, goal_iy = nx, ny
+                                        goal_idx = nidx
+                                        found = True
+                                        break
+                                if found:
                                     break
                             if found:
                                 break
-                        if found:
-                            break
                     if not found:
                         continue
 
@@ -527,6 +555,8 @@ class Nav2FrontierExplorer(Node):
                 score = self.gain_weight * gain - self.cost_weight * dist
                 if clearance_cells[goal_idx] >= 0:
                     clearance_m = clearance_cells[goal_idx] * meta.res
+                    if enforce_clearance and clearance_m < clearance_min:
+                        continue
                     score += self.clearance_weight * clearance_m
                     if clearance_m < clearance_min:
                         score -= self.clearance_penalty * (clearance_min - clearance_m)
@@ -543,9 +573,33 @@ class Nav2FrontierExplorer(Node):
 
             return best_goal
 
-        goal = _pick_goal(min_frontier_m, min_goal_dist_m, clearance_min_m)
+        goal = _pick_goal(
+            min_frontier_m,
+            min_goal_dist_m,
+            clearance_min_m,
+            enforce_clearance=True,
+        )
+        if goal is None:
+            goal = _pick_goal(
+                min_frontier_m,
+                min_goal_dist_m,
+                clearance_min_m,
+                enforce_clearance=False,
+            )
         if self.breadth_first and goal is None and (min_frontier_m > 0.0 or min_goal_dist_m > 0.0):
-            goal = _pick_goal(0.0, 0.0, self.clearance_min_m)
+            goal = _pick_goal(
+                0.0,
+                max(self.fallback_min_goal_dist_m, 0.0),
+                self.clearance_min_m,
+                enforce_clearance=False,
+            )
+            if goal is None:
+                goal = _pick_goal(
+                    0.0,
+                    0.0,
+                    self.clearance_min_m,
+                    enforce_clearance=False,
+                )
         return goal
 
     # ------------------------------------------------------------------
