@@ -569,6 +569,7 @@ class TopicMonitor(Node):
         for topic_name in (
             '/map',
             '/scan_merged',
+            '/scan_merged_viz',
             '/odom',
             '/cmd_vel',
             '/model/x500_small_tof_0/pose',

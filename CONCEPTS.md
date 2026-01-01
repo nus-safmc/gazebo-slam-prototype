@@ -22,10 +22,11 @@ If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of t
 - To launch **Gazebo GUI + RViz** and capture logs: `pixi run -e jazzy px4_nav2_explore_playfield_full_log` (recommended) or `pixi run -e jazzy px4_nav2_explore_full_log`.
 - Expect ~20–30s for PX4 preflight → arm → takeoff; watch for `Ready for takeoff!`, `Armed by external command`, `Takeoff detected`.
 - Spawn pose is configurable via `px4_model_pose:=x,y,z,roll,pitch,yaw` (default `0,-2,0.2,0,0,0` to avoid the playfield's central pillar at the origin).
+- Altitude safety: `target_alt_m` is clamped to `max_alt_fraction * max_alt_m` (defaults: `0.6 * 2.0 = 1.2m`).
 - To tail the latest log: `pixi run -e jazzy tail_log -- px4_nav2_explore` (or `pixi run -e jazzy tail_log -- px4_nav2_explore_playfield_full`)
-  - PX4 track world defaults to `world:=playfield_px4_small.sdf` (~6×6 m, PX4-only; avoids spawning the legacy `rex_quadcopter`).
+  - PX4 track world defaults to `world:=playfield_px4_sparse.sdf` (~40×40 m, PX4-only; avoids spawning the legacy `rex_quadcopter`).
   - The older `playfield_sparse.sdf` / `playfield.sdf` worlds are fast-track oriented and include `rex_quadcopter` models, so they will spawn an extra drone if used with PX4.
-  - RViz scan tip: `/scan_merged` is the real scan (inf = no return). `/scan_merged_viz` fills inf beams with `range_max` so you see a full ring.
+  - RViz scan tip: `/scan_merged` is the SLAM/Nav2 scan. For PX4, “no return” beams are published as a finite threshold (~4.05m) so slam_toolbox (Karto) can clear free space; `/scan_merged_viz` fills any remaining `inf` with `range_max` for display.
   - To switch SLAM profile: `pixi run -e jazzy px4_nav2_explore slam_config:=slam_toolbox_px4_fast.yaml` (or `slam_toolbox_px4_robust.yaml`).
 
 ---

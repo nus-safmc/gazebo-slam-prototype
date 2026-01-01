@@ -36,7 +36,7 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- Base field (6 × 6 m) -->
+    <!-- Base field (8 × 8 m) -->
     <model name="ground_plane">
       <static>true</static>
       <link name="link">
@@ -44,7 +44,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>6 6</size>
+              <size>8 8</size>
             </plane>
           </geometry>
         </collision>
@@ -52,7 +52,7 @@
           <geometry>
             <plane>
               <normal>0 0 1</normal>
-              <size>6 6</size>
+              <size>8 8</size>
             </plane>
           </geometry>
           <material>
@@ -64,24 +64,24 @@
       </link>
     </model>
 
-    <!-- Perimeter walls (2.0 m). The inside faces are at +/-2.8 m. -->
+    <!-- Perimeter walls (1.33 m). The inside faces are at +/-3.865 m. -->
     <model name="perimeter_wall_north">
       <static>true</static>
-      <pose>0 3 0 0 0 0</pose>
+      <pose>0 4 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>6.6 0.4 2.0</size>
+              <size>8.47 0.27 1.33</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>6.6 0.4 2.0</size>
+              <size>8.47 0.27 1.33</size>
             </box>
           </geometry>
           <material>
@@ -94,21 +94,21 @@
 
     <model name="perimeter_wall_south">
       <static>true</static>
-      <pose>0 -3 0 0 0 0</pose>
+      <pose>0 -4 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>6.6 0.4 2.0</size>
+              <size>8.47 0.27 1.33</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>6.6 0.4 2.0</size>
+              <size>8.47 0.27 1.33</size>
             </box>
           </geometry>
           <material>
@@ -121,21 +121,21 @@
 
     <model name="perimeter_wall_east">
       <static>true</static>
-      <pose>3 0 0 0 0 0</pose>
+      <pose>4 0 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.4 6.6 2.0</size>
+              <size>0.27 8.47 1.33</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.4 6.6 2.0</size>
+              <size>0.27 8.47 1.33</size>
             </box>
           </geometry>
           <material>
@@ -148,21 +148,21 @@
 
     <model name="perimeter_wall_west">
       <static>true</static>
-      <pose>-3 0 0 0 0 0</pose>
+      <pose>-4 0 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.4 6.6 2.0</size>
+              <size>0.27 8.47 1.33</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.4 6.6 2.0</size>
+              <size>0.27 8.47 1.33</size>
             </box>
           </geometry>
           <material>
@@ -179,18 +179,18 @@
       <pose>0 1.6 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>2.2 0.45 2.0</size>
+              <size>2.2 0.45 1.33</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>2.2 0.45 2.0</size>
+              <size>2.2 0.45 1.33</size>
             </box>
           </geometry>
           <material>
@@ -206,18 +206,18 @@
       <pose>2.1 -1.0 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.45 2.0 2.0</size>
+              <size>0.45 2.0 1.33</size>
             </box>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <box>
-              <size>0.45 2.0 2.0</size>
+              <size>0.45 2.0 1.33</size>
             </box>
           </geometry>
           <material>
@@ -233,20 +233,20 @@
       <pose>-2.1 -1.0 0 0 0 0</pose>
       <link name="link">
         <collision name="collision">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <cylinder>
               <radius>0.28</radius>
-              <length>2.0</length>
+              <length>1.33</length>
             </cylinder>
           </geometry>
         </collision>
         <visual name="visual">
-          <pose>0 0 1.0 0 0 0</pose>
+          <pose>0 0 0.665 0 0 0</pose>
           <geometry>
             <cylinder>
               <radius>0.28</radius>
-              <length>2.0</length>
+              <length>1.33</length>
             </cylinder>
           </geometry>
           <material>

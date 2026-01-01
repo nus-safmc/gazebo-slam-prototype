@@ -28,6 +28,8 @@ def generate_launch_description():
     gz_world_name = LaunchConfiguration('gz_world_name')
     gz_gui = LaunchConfiguration('gz_gui')
     target_alt_m = LaunchConfiguration('target_alt_m')
+    max_alt_m = LaunchConfiguration('max_alt_m')
+    max_alt_fraction = LaunchConfiguration('max_alt_fraction')
     vehicle_odometry_topic = LaunchConfiguration('vehicle_odometry_topic')
     monitor = LaunchConfiguration('monitor')
     px4_model_pose = LaunchConfiguration('px4_model_pose')
@@ -50,8 +52,8 @@ def generate_launch_description():
     )
     declare_world = DeclareLaunchArgument(
         'world',
-        default_value='playfield_px4_small.sdf',
-        description='World file under tof_slam_sim/worlds (PX4-safe defaults: playfield_px4_small.sdf).',
+        default_value='playfield_px4_sparse.sdf',
+        description='World file under tof_slam_sim/worlds (PX4-safe defaults: playfield_px4_sparse.sdf).',
     )
     declare_gz_world_name = DeclareLaunchArgument(
         'gz_world_name',
@@ -66,7 +68,17 @@ def generate_launch_description():
     declare_target_alt = DeclareLaunchArgument(
         'target_alt_m',
         default_value='1.0',
-        description='Target altitude (meters, +up in Gazebo/ROS ENU) for PX4 offboard.',
+        description='Target altitude (meters, +up in Gazebo/ROS ENU) for PX4 offboard (clamped by max_alt_*).',
+    )
+    declare_max_alt_m = DeclareLaunchArgument(
+        'max_alt_m',
+        default_value='2.0',
+        description='Environment max height in meters (100%). PX4 offboard target altitude is clamped to max_alt_fraction * max_alt_m.',
+    )
+    declare_max_alt_fraction = DeclareLaunchArgument(
+        'max_alt_fraction',
+        default_value='0.6',
+        description='Clamp PX4 offboard target altitude to this fraction of max_alt_m (e.g. 0.6 = keep within lower 60%).',
     )
     declare_px4_model_pose = DeclareLaunchArgument(
         'px4_model_pose',
@@ -159,6 +171,9 @@ def generate_launch_description():
         parameters=[
             slam_toolbox_params,
             {
+                # Use the raw merged scan for SLAM. It uses `inf` for "no return" beams,
+                # which slam_toolbox treats as free space up to `range_max` (without creating
+                # a phantom ring obstacle at max range, which happens if we substitute inf).
                 'scan_topic': '/scan_merged',
                 'odom_frame': 'robot/odom',
                 'map_frame': 'robot/map',
@@ -227,11 +242,11 @@ def generate_launch_description():
             'clearance_min_m': 0.9,
             'clearance_weight': 10.0,
             'clearance_penalty': 20.0,
-            # Match `playfield_px4_small.sdf` interior bounds (walls at +/-3 with 0.4m thickness).
-            'arena_min_x': -2.6,
-            'arena_max_x': 2.6,
-            'arena_min_y': -2.6,
-            'arena_max_y': 2.6,
+            # Match `playfield_px4_sparse.sdf` interior bounds (walls at +/-20 with 0.4m thickness).
+            'arena_min_x': -19.0,
+            'arena_max_x': 19.0,
+            'arena_min_y': -19.0,
+            'arena_max_y': 19.0,
         }],
     )
 
@@ -244,6 +259,8 @@ def generate_launch_description():
             'use_sim_time': use_sim_time,
             'cmd_vel_topic': '/cmd_vel',
             'target_alt_m': target_alt_m,
+            'max_alt_m': max_alt_m,
+            'max_alt_fraction': max_alt_fraction,
             'vehicle_odometry_topic': vehicle_odometry_topic,
         }],
     )
@@ -268,6 +285,7 @@ def generate_launch_description():
                 '/tf:tf2_msgs/msg/TFMessage:reliable',
                 '/tf_static:tf2_msgs/msg/TFMessage:latched',
                 '/scan_merged:sensor_msgs/msg/LaserScan:best_effort',
+                '/scan_merged_viz:sensor_msgs/msg/LaserScan:best_effort',
                 '/map:nav_msgs/msg/OccupancyGrid:reliable',
                 '/cmd_vel:geometry_msgs/msg/Twist:reliable',
             ],
@@ -297,6 +315,8 @@ def generate_launch_description():
     ld.add_action(declare_gz_world_name)
     ld.add_action(declare_gz_gui)
     ld.add_action(declare_target_alt)
+    ld.add_action(declare_max_alt_m)
+    ld.add_action(declare_max_alt_fraction)
     ld.add_action(declare_vehicle_odometry_topic)
     ld.add_action(declare_monitor)
     ld.add_action(declare_px4_model_pose)

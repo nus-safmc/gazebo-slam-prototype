@@ -77,6 +77,23 @@ class TofToScan(Node):
         self.min_valid_per_column = max(1, self.min_valid_per_column)
         self.far_clip_margin_m = float(self.declare_parameter('far_clip_margin_m', 0.01).value)
         self.far_clip_margin_m = max(0.0, self.far_clip_margin_m)
+        # `LaserScan.range_max` is treated by Karto (used by slam_toolbox) as a *hard* maximum
+        # range: readings >= maxRange are ignored entirely.
+        #
+        # We represent "no return" beams as a finite *threshold* range that clears free space
+        # without creating a phantom obstacle ring. To ensure those beams are not ignored, keep:
+        #   no_return_range < scan.range_max
+        self.range_max_margin_m = float(self.declare_parameter('range_max_margin_m', 0.20).value)
+        self.range_max_margin_m = max(0.0, self.range_max_margin_m)
+        self.no_return_range_m = float(
+            self.declare_parameter('no_return_range_m', 0.0).get_parameter_value().double_value
+        )
+        # If true, include "no return" beams as a finite threshold distance instead of +inf.
+        # slam_toolbox uses Karto, which ignores readings >= LaserScan.range_max; we therefore
+        # publish no-return beams below range_max so Karto can ray-trace free space.
+        self.no_return_as_range_max = bool(
+            self.declare_parameter('no_return_as_range_max', False).value
+        )
 
         # Optional angular-domain filtering to reduce single-beam speckle from sparse ToF scans.
         self.angular_filter_window = int(self.declare_parameter('angular_filter_window', 1).value)
@@ -135,6 +152,11 @@ class TofToScan(Node):
     def _stamp_ns(stamp) -> int:
         return int(stamp.sec) * 1_000_000_000 + int(stamp.nanosec)
 
+    @staticmethod
+    def _wrap_pi(angle: float) -> float:
+        # Wrap to [-pi, pi)
+        return float((float(angle) + math.pi) % (2.0 * math.pi) - math.pi)
+
     def _angular_filter(self, ranges: list[float]) -> list[float]:
         window = int(self.angular_filter_window)
         if window <= 1 or len(ranges) < 3:
@@ -191,7 +213,10 @@ class TofToScan(Node):
                 oldest_stamp if oldest_stamp is not None else self.get_clock().now().to_msg()
             )
             merged_scan.header.frame_id = self.output_frame
-            merged_scan.angle_min = 0.0
+            # Use the conventional LaserScan angle convention: [-pi, +pi).
+            # Some consumers (notably RViz displays and certain filters) behave better with
+            # this standard range than [0, 2*pi).
+            merged_scan.angle_min = -math.pi
 
             num_points = int(self.output_num_points)
             merged_scan.angle_increment = (2.0 * math.pi) / float(num_points)
@@ -202,7 +227,13 @@ class TofToScan(Node):
             # Ranges are expressed from the base_link origin, but individual sensors are offset
             # from the origin by ring_radius_m. Account for that so valid points near the
             # sensor far-clip remain within [range_min, range_max].
-            merged_scan.range_max = self.maxrange + self.ring_radius_m
+            base_max = float(self.maxrange + self.ring_radius_m)
+            merged_scan.range_max = float(base_max + self.range_max_margin_m)
+            # Default the no-return threshold to the physical ToF max range from the base origin.
+            no_return_range = (
+                float(self.no_return_range_m) if self.no_return_range_m > 0.0 else base_max
+            )
+            no_return_range = min(no_return_range, float(merged_scan.range_max - 1e-3))
 
             ranges = [float('inf')] * num_points
             bin_width = self.h_fov / 8.0
@@ -261,25 +292,41 @@ class TofToScan(Node):
                 
                 # Map each range to the merged scan
                 for col_index, r in enumerate(img_ranges):
-                    if not math.isfinite(r):
+                    far_clip_threshold = float(self.maxrange - float(self.far_clip_margin_m))
+                    is_no_return = (not math.isfinite(r)) or float(r) >= far_clip_threshold
+                    if is_no_return and not self.no_return_as_range_max:
                         continue
-
-                    # Gazebo's depth camera reports values at the far clip for "no return".
-                    # Treat anything close to the configured max_range_m as "no return" so SLAM
-                    # and Nav2 don't integrate a phantom wall at the far-clip distance.
-                    if r >= (self.maxrange - float(self.far_clip_margin_m)):
-                        continue
+                    r = float(r) if math.isfinite(r) else float('inf')
 
                     # Horizontal beam angle relative to this sensor (centered bins).
                     theta_rel = (self.h_fov * 0.5) - (float(col_index) + 0.5) * (self.h_fov / 8.0)
-                    theta = sensor_angle + theta_rel
+                    theta = self._wrap_pi(sensor_angle + theta_rel)
 
-                    # Normalize to [0, 2*pi)
-                    theta = float(theta % (2.0 * math.pi))
+                    # Convert this sensor measurement into an equivalent point in the base frame,
+                    # then re-bin by the point's bearing from the base origin.
+                    #
+                    # This corrects the parallax introduced by the 5cm sensor ring: if we bin purely by
+                    # the sensor beam angle (ignoring the offset), close obstacles can shift by multiple
+                    # degrees, producing the characteristic "spoke" / smeared maps.
+                    if is_no_return:
+                        r_used = float(self.maxrange)
+                    else:
+                        r_used = float(r)
+
+                    px = sx + r_used * math.cos(theta)
+                    py = sy + r_used * math.sin(theta)
+                    base_angle = self._wrap_pi(math.atan2(py, px))
+                    base_range = float(math.hypot(px, py))
+
+                    if not is_no_return:
+                        if (not math.isfinite(base_range)) or base_range < float(merged_scan.range_min):
+                            continue
+                        if base_range > float(merged_scan.range_max):
+                            continue
 
                     if self.output_fill_bins:
-                        theta_start = float((theta - half_bin) % (2.0 * math.pi))
-                        theta_end = float((theta + half_bin) % (2.0 * math.pi))
+                        theta_start = self._wrap_pi(base_angle - half_bin)
+                        theta_end = self._wrap_pi(base_angle + half_bin)
 
                         def _fill_span(a0: float, a1: float) -> None:
                             idx0 = int(math.floor((a0 - merged_scan.angle_min) / merged_scan.angle_increment))
@@ -287,24 +334,26 @@ class TofToScan(Node):
                             idx0 = max(0, min(num_points - 1, idx0))
                             idx1 = max(0, min(num_points - 1, idx1))
                             for idx in range(idx0, idx1 + 1):
-                                ang = merged_scan.angle_min + float(idx) * merged_scan.angle_increment
-                                px = sx + float(r) * math.cos(ang)
-                                py = sy + float(r) * math.sin(ang)
-                                r_center = math.hypot(px, py)
-                                ranges[idx] = min(ranges[idx], r_center)
+                                if is_no_return:
+                                    # For "no return" beams, publish a finite threshold (not `range_max`).
+                                    # Karto uses `range_threshold` to ray-trace free space without marking
+                                    # an obstacle at the end, but it ignores readings >= maxRange.
+                                    ranges[idx] = min(ranges[idx], no_return_range)
+                                else:
+                                    ranges[idx] = min(ranges[idx], base_range)
 
                         if theta_start <= theta_end:
                             _fill_span(theta_start, theta_end)
                         else:
-                            _fill_span(theta_start, (2.0 * math.pi) - 1e-9)
-                            _fill_span(0.0, theta_end)
+                            _fill_span(theta_start, math.pi - 1e-9)
+                            _fill_span(-math.pi, theta_end)
                     else:
-                        # Project the hit point into base_link frame and compute range from base origin.
-                        px = sx + float(r) * math.cos(theta)
-                        py = sy + float(r) * math.sin(theta)
-                        r_center = math.hypot(px, py)
+                        if is_no_return:
+                            r_center = no_return_range
+                        else:
+                            r_center = base_range
 
-                        idx = int((theta - merged_scan.angle_min) / merged_scan.angle_increment)
+                        idx = int((base_angle - merged_scan.angle_min) / merged_scan.angle_increment)
                         if 0 <= idx < num_points:
                             ranges[idx] = min(ranges[idx], r_center)
 

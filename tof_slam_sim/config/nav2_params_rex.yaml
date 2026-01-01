@@ -5,7 +5,7 @@
 #   base: robot/base_footprint (alias: robot/base_link)
 #
 # Topics:
-#   scan:     /scan_merged
+#   scan:     /scan_merged_viz
 #   odometry: /odom
 
 bt_navigator:
@@ -127,17 +127,28 @@ local_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         footprint_clearing_enabled: True
-        observation_sources: scan
-        scan:
+        # Split marking vs clearing:
+        # - Marking uses the raw scan with `inf` for no-return beams so we don't create
+        #   phantom obstacles at the far clip distance.
+        # - Clearing uses the RViz-friendly scan that substitutes `inf` with range_max,
+        #   but with marking disabled so it only clears free space.
+        observation_sources: scan_marking scan_clearing
+        scan_marking:
           topic: /scan_merged
           max_obstacle_height: 2.0
-          clearing: True
+          clearing: False
           marking: True
+          data_type: "LaserScan"
+          obstacle_max_range: 4.0
+          obstacle_min_range: 0.35
+        scan_clearing:
+          topic: /scan_merged_viz
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: False
           data_type: "LaserScan"
           raytrace_max_range: 4.1
           raytrace_min_range: 0.0
-          obstacle_max_range: 4.0
-          obstacle_min_range: 0.35
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
@@ -262,17 +273,10 @@ collision_monitor:
     source_timeout: 1.0
     base_shift_correction: True
     stop_pub_timeout: 2.0
-    polygons: ["StopZone", "FootprintApproach"]
-    # Hard safety zone for near-field obstacles (walls/props/other robots).
-    StopZone:
-      type: "polygon"
-      # Square around base_footprint in meters.
-      # PX4 drone is larger than the rex_quadcopter footprint; keep a wider stop zone.
-      points: "[[0.45, 0.45], [0.45, -0.45], [-0.45, -0.45], [-0.45, 0.45]]"
-      action_type: "stop"
-      min_points: 4
-      visualize: False
-      enabled: True
+    # In this ToF-only setup, a hard STOP zone can deadlock the robot when it gets
+    # close to obstacles (it prevents backing away). Use the directional APPROACH
+    # behavior instead and let costmap inflation keep clearance.
+    polygons: ["FootprintApproach"]
     FootprintApproach:
       type: "polygon"
       action_type: "approach"
@@ -285,7 +289,7 @@ collision_monitor:
     observation_sources: ["scan"]
     scan:
       type: "scan"
-      topic: "/scan_merged"
+      topic: "/scan_merged_viz"
       enabled: True
 
 docking_server:

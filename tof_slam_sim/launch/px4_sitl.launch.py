@@ -37,8 +37,8 @@ def generate_launch_description() -> LaunchDescription:
     )
     world_arg = DeclareLaunchArgument(
         'world',
-        default_value='playfield_px4_small.sdf',
-        description='World file under tof_slam_sim/worlds (PX4-safe defaults: playfield_px4_small.sdf).',
+        default_value='playfield_px4_sparse.sdf',
+        description='World file under tof_slam_sim/worlds (PX4-safe defaults: playfield_px4_sparse.sdf).',
     )
     world_name_arg = DeclareLaunchArgument(
         'gz_world_name',
@@ -229,20 +229,26 @@ def generate_launch_description() -> LaunchDescription:
             # output rays. This significantly reduces the "spoke" artifacts in occupancy maps.
             'output_num_points': 360,
             'output_fill_bins': True,
-            'roi_row_start': 2,
-            # Prefer horizon rows to avoid ground returns when flying at ~1.0m altitude.
+            # Prefer the central rows (near 0° vertical) to avoid ground hits and
+            # self-occlusion from aggressive flight attitudes.
+            'roi_row_start': 3,
             'roi_row_end': 5,
             # Use a robust reduction across rows to avoid single-pixel self/ground hits.
             'column_reduce': 'median',
             # Require multiple valid samples per column to suppress depth speckle.
-            'min_valid_per_column': 2,
+            'min_valid_per_column': 1,
             # Treat near-far-clip values as "no return" to avoid phantom perimeter walls.
-            'far_clip_margin_m': 0.02,
+            'far_clip_margin_m': 0.03,
+            # Publish "no return" beams as a finite threshold so SLAM (Karto) can clear free
+            # space in open areas. Internally, the LaserScan range_max is padded slightly above
+            # the threshold so Karto doesn't ignore those beams (it drops readings >= maxRange).
+            # We keep Nav2 obstacle marking bounded via obstacle_max_range (see nav2 params).
+            'no_return_as_range_max': True,
             # Light angular-domain outlier suppression across the merged 360° scan.
-            'angular_filter_window': 5,
-            'angular_outlier_thresh_m': 0.8,
+            'angular_filter_window': 7,
+            'angular_outlier_thresh_m': 0.7,
             # Short temporal median filter to reduce per-frame flicker.
-            'temporal_window': 3,
+            'temporal_window': 5,
         }],
     )
 

@@ -100,6 +100,11 @@ class TwistToPX4Offboard(Node):
         self.declare_parameter('deadman_timeout_sec', 0.75)
 
         self.declare_parameter('target_alt_m', 1.5)
+        # Clamp the target altitude to <= max_alt_fraction * max_alt_m when max_alt_m > 0.
+        # This keeps the vehicle within the lower portion of the environment height, which is
+        # more realistic for indoor mapping (and helps keep ToF scans stable).
+        self.declare_parameter('max_alt_m', 0.0)
+        self.declare_parameter('max_alt_fraction', 1.0)
         self.declare_parameter('alt_kp', 0.8)
         self.declare_parameter('max_climb_mps', 0.8)
         self.declare_parameter('max_descend_mps', 0.6)
@@ -127,6 +132,13 @@ class TwistToPX4Offboard(Node):
             float(self.get_parameter('deadman_timeout_sec').value) * 1e9
         )
         self._target_alt_m = float(self.get_parameter('target_alt_m').value)
+        self._max_alt_m = float(self.get_parameter('max_alt_m').value)
+        self._max_alt_fraction = float(self.get_parameter('max_alt_fraction').value)
+        if not _is_finite(self._max_alt_m) or self._max_alt_m < 0.0:
+            self._max_alt_m = 0.0
+        if not _is_finite(self._max_alt_fraction):
+            self._max_alt_fraction = 1.0
+        self._max_alt_fraction = _clamp(self._max_alt_fraction, 0.0, 1.0)
         self._alt_kp = float(self.get_parameter('alt_kp').value)
         self._max_climb_mps = float(self.get_parameter('max_climb_mps').value)
         self._max_descend_mps = float(self.get_parameter('max_descend_mps').value)
@@ -211,8 +223,14 @@ class TwistToPX4Offboard(Node):
             'PX4 offboard bridge online: '
             f'cmd_vel={self._cmd_vel_topic} vehicle_odom={self._vehicle_odom_topic} '
             f'rate={self._publish_rate_hz:.1f}Hz target_alt={self._target_alt_m:.2f}m '
+            f'(cap={self._target_alt_m_effective():.2f}m) '
             f'auto_offboard={self._auto_offboard} auto_arm={self._auto_arm}'
         )
+
+    def _target_alt_m_effective(self) -> float:
+        if self._max_alt_m > 0.0:
+            return min(self._target_alt_m, self._max_alt_m * self._max_alt_fraction)
+        return self._target_alt_m
 
     def _now_ns(self) -> int:
         return int(self.get_clock().now().nanoseconds)
@@ -322,7 +340,7 @@ class TwistToPX4Offboard(Node):
         if not _is_finite(pd):
             return 0.0
         z_up = -pd
-        v_up = self._alt_kp * (self._target_alt_m - z_up)
+        v_up = self._alt_kp * (self._target_alt_m_effective() - z_up)
         v_up = _clamp(v_up, -self._max_descend_mps, self._max_climb_mps)
         return -v_up
 
