@@ -18,6 +18,7 @@ setup(
             'auto_pilot  = tof_slam_sim.auto_pilot_node:main',
             'map_tf_fallback = tof_slam_sim.map_tf_fallback:main',
             'topic_monitor = tof_slam_sim.topic_monitor:main',
+            'arena_map_padder = tof_slam_sim.arena_map_padder:main',
         ],
     },
 )

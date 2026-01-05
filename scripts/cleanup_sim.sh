@@ -9,9 +9,12 @@ echo "[cleanup] Stopping stray Gazebo / bridge processes..."
 # Stop any lingering top-level launch processes from this repo first.
 # If these stay alive, they may respawn nodes after we pkill them below.
 #
-# NOTE: Under pixi/conda, `ros2` is commonly invoked via the Python entrypoint
-# (e.g. ".../python .../ros2 launch ..."), so don't anchor the regex at start-of-line.
-pkill -f '[r]os2 launch tof_slam_sim' 2>/dev/null || true
+# NOTE: Under pixi/conda, `ros2` may be invoked directly ("ros2 launch ...") or via the
+# Python entrypoint wrapper (e.g. ".../python .../ros2 launch ..."). Only match those
+# actual processes (anchored), otherwise this can accidentally kill shells that merely
+# *contain* the string "ros2 launch tof_slam_sim" in their arguments.
+pkill -f '^([^[:space:]]+/)?ros2[[:space:]]+launch[[:space:]]+tof_slam_sim' 2>/dev/null || true
+pkill -f '^([^[:space:]]+/)?python[^[:space:]]*[[:space:]]+([^[:space:]]+/)?ros2[[:space:]]+launch[[:space:]]+tof_slam_sim' 2>/dev/null || true
 
 # Any Gazebo sim instance (common cause of multiple /clock publishers).
 # Gazebo can be stubborn to terminate; send SIGINT, then SIGTERM, then SIGKILL.
@@ -51,6 +54,7 @@ pkill -f '[t]of_slam_sim/auto_pilot' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/scan_merger' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/topic_monitor' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/map_tf_fallback' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/arena_map_padder' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/nav2_frontier_explorer' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/tof_to_scan\.py' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/pose_to_tf\.py' 2>/dev/null || true

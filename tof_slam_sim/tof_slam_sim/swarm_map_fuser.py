@@ -62,6 +62,10 @@ class SwarmMapFuser(Node):
     This is intended for multi-robot mapping in simulation where robot odometry
     is effectively ground truth. It avoids SLAM drift and keeps RViz topics
     compatible by publishing `/map` and `/map_updates`.
+
+    By default the grid bounds are fixed. When `dynamic_bounds` is enabled, the
+    map starts at the configured bounds and expands as robots explore (similar
+    to how real-world mappers grow their maps over time).
     """
 
     def __init__(self) -> None:
@@ -89,6 +93,9 @@ class SwarmMapFuser(Node):
         self.declare_parameter('max_x', 20.0)
         self.declare_parameter('min_y', -20.0)
         self.declare_parameter('max_y', 20.0)
+        self.declare_parameter('dynamic_bounds', False)
+        self.declare_parameter('expand_margin_m', 2.0)
+        self.declare_parameter('expand_slack_m', 3.0)
         self.declare_parameter('publish_period_sec', 0.5)
         self.declare_parameter('seed_keepout', True)
         self.declare_parameter('keepout_margin_m', 0.2)
@@ -132,12 +139,24 @@ class SwarmMapFuser(Node):
         max_x = float(self.get_parameter('max_x').value)
         min_y = float(self.get_parameter('min_y').value)
         max_y = float(self.get_parameter('max_y').value)
+        self._dynamic_bounds = bool(self.get_parameter('dynamic_bounds').value)
+        self._expand_margin_m = float(self.get_parameter('expand_margin_m').value)
+        if not math.isfinite(self._expand_margin_m) or self._expand_margin_m < 0.0:
+            self._expand_margin_m = 0.0
+        self._expand_slack_m = float(self.get_parameter('expand_slack_m').value)
+        if not math.isfinite(self._expand_slack_m) or self._expand_slack_m < 0.0:
+            self._expand_slack_m = 0.0
         if res <= 0.0:
             raise ValueError('resolution must be > 0')
         if max_x <= min_x or max_y <= min_y:
             raise ValueError('invalid map bounds')
+        # Align bounds to the grid resolution so TF consumers and map-savers see stable metadata.
+        min_x = math.floor(min_x / res) * res
+        min_y = math.floor(min_y / res) * res
         width = int(math.ceil((max_x - min_x) / res))
         height = int(math.ceil((max_y - min_y) / res))
+        max_x = min_x + width * res
+        max_y = min_y + height * res
         self._spec = _MapSpec(
             res=res,
             min_x=min_x,
@@ -164,10 +183,13 @@ class SwarmMapFuser(Node):
         self._keepout = bytearray(size)
         self._dirty = False
         self._published_once = False
+        self._last_published_shape: tuple[int, int] | None = None
 
         seed_keepout = bool(self.get_parameter('seed_keepout').value)
         keepout_margin = float(self.get_parameter('keepout_margin_m').value)
-        if seed_keepout and keepout_margin > 0.0:
+        if self._dynamic_bounds and seed_keepout:
+            self.get_logger().info('dynamic_bounds enabled; skipping keepout seeding.')
+        elif seed_keepout and keepout_margin > 0.0:
             self._seed_keepout(margin_m=keepout_margin)
 
         self._tf_buffer = Buffer()
@@ -205,10 +227,104 @@ class SwarmMapFuser(Node):
         period = 0.5 if period <= 0.0 else period
         self._timer = self.create_timer(period, self._publish)
 
+        mode = 'dynamic' if self._dynamic_bounds else 'fixed'
         self.get_logger().info(
-            f'Global map fuser online: frame={self.map_frame} grid={width}x{height} '
+            f'Global map fuser online ({mode}): frame={self.map_frame} grid={width}x{height} '
             f'res={res:.3f}m scans={len(scan_topics)} robots={robots}'
         )
+
+    def _resize_map(self, *, min_x: float, max_x: float, min_y: float, max_y: float) -> None:
+        res = float(self._spec.res)
+        if max_x <= min_x or max_y <= min_y:
+            return
+
+        min_x = math.floor(float(min_x) / res) * res
+        min_y = math.floor(float(min_y) / res) * res
+        width = int(math.ceil((float(max_x) - min_x) / res))
+        height = int(math.ceil((float(max_y) - min_y) / res))
+        if width <= 0 or height <= 0:
+            return
+        max_x = min_x + width * res
+        max_y = min_y + height * res
+
+        old = self._spec
+        if (
+            abs(min_x - old.min_x) < 1e-9
+            and abs(max_x - old.max_x) < 1e-9
+            and abs(min_y - old.min_y) < 1e-9
+            and abs(max_y - old.max_y) < 1e-9
+        ):
+            return
+
+        old_w = int(old.width)
+        old_h = int(old.height)
+        off_x = int(round((old.min_x - min_x) / res))
+        off_y = int(round((old.min_y - min_y) / res))
+
+        new_size = width * height
+        new_log_odds = array('h', [0]) * new_size
+        new_observed = bytearray(new_size)
+        new_keepout = bytearray(new_size)
+
+        for iy in range(old_h):
+            old_row = iy * old_w
+            new_row = (iy + off_y) * width + off_x
+            new_log_odds[new_row : new_row + old_w] = self._log_odds[old_row : old_row + old_w]
+            new_observed[new_row : new_row + old_w] = self._observed[old_row : old_row + old_w]
+            new_keepout[new_row : new_row + old_w] = self._keepout[old_row : old_row + old_w]
+
+        self._spec = _MapSpec(
+            res=res,
+            min_x=min_x,
+            max_x=max_x,
+            min_y=min_y,
+            max_y=max_y,
+            width=width,
+            height=height,
+        )
+        self._log_odds = new_log_odds
+        self._observed = new_observed
+        self._keepout = new_keepout
+        self._dirty = True
+
+        self.get_logger().info(
+            f'Expanded map to grid={width}x{height} res={res:.3f}m '
+            f'origin=({min_x:.2f},{min_y:.2f})'
+        )
+
+    def _ensure_window(self, *, x: float, y: float, radius_m: float) -> None:
+        if not self._dynamic_bounds:
+            return
+        radius = float(radius_m)
+        if not math.isfinite(radius) or radius <= 0.0:
+            return
+
+        margin = float(self._expand_margin_m)
+        min_x = float(x) - radius - margin
+        max_x = float(x) + radius + margin
+        min_y = float(y) - radius - margin
+        max_y = float(y) + radius + margin
+
+        spec = self._spec
+        if min_x >= spec.min_x and max_x <= spec.max_x and min_y >= spec.min_y and max_y <= spec.max_y:
+            return
+
+        slack = float(self._expand_slack_m)
+        new_min_x = float(spec.min_x)
+        new_max_x = float(spec.max_x)
+        new_min_y = float(spec.min_y)
+        new_max_y = float(spec.max_y)
+
+        if min_x < spec.min_x:
+            new_min_x = min_x - slack
+        if max_x > spec.max_x:
+            new_max_x = max_x + slack
+        if min_y < spec.min_y:
+            new_min_y = min_y - slack
+        if max_y > spec.max_y:
+            new_max_y = max_y + slack
+
+        self._resize_map(min_x=new_min_x, max_x=new_max_x, min_y=new_min_y, max_y=new_max_y)
 
     def _seed_keepout(self, *, margin_m: float) -> None:
         keep_min_x = self._spec.min_x + margin_m
@@ -311,15 +427,17 @@ class SwarmMapFuser(Node):
             q = tf.transform.rotation
             base_yaw = _yaw_from_quat(q.x, q.y, q.z, q.w)
 
-            if not (self._spec.min_x <= ox <= self._spec.max_x and self._spec.min_y <= oy <= self._spec.max_y):
-                return
-
-            start_ix, start_iy = self._world_to_cell(ox, oy)
-
             max_range = float(msg.range_max)
             if self._max_range_override > 0.0:
                 max_range = self._max_range_override
             max_range = max(0.1, max_range)
+
+            self._ensure_window(x=ox, y=oy, radius_m=max_range)
+            spec = self._spec
+            if not (spec.min_x <= ox <= spec.max_x and spec.min_y <= oy <= spec.max_y):
+                return
+
+            start_ix, start_iy = self._world_to_cell(ox, oy)
 
             # Filter out OTHER robots so they don't get fused into the static map.
             # Do not filter the scanning robot itself; otherwise nearby walls/pillars
@@ -448,6 +566,16 @@ class SwarmMapFuser(Node):
         grid = self._build_map()
         self._map_pub.publish(grid)
         self._published_once = True
+        shape = (int(grid.info.width), int(grid.info.height))
+        shape_changed = self._last_published_shape is not None and shape != self._last_published_shape
+        self._last_published_shape = shape
+
+        # When the map grows, the Nav2 StaticLayer needs the full `/map` message to resize.
+        # Publishing `/map_updates` in the same tick can arrive first and get ignored (bounds
+        # mismatch). Skip updates for one cycle on shape changes to avoid thrash.
+        if shape_changed:
+            self._dirty = False
+            return
 
         upd = OccupancyGridUpdate()
         upd.header = grid.header

@@ -143,6 +143,7 @@ px4_sitl_slam_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh px4_sitl
 		tail_log = "bash scripts/tail_latest_log.sh"
 		verify_tf_rates = "bash scripts/verify_tf_rates.sh"
 		verify_tf_rates_log = "FILTER_RMW_TYPEHASH=1 bash scripts/run_with_log.sh verify_tf_rates bash scripts/verify_tf_rates.sh"
+		verify_map_runtime = "bash scripts/verify_map_runtime.sh"
 		nav2_explore = "bash scripts/cleanup_sim.sh && ros2 launch tof_slam_sim nav2_explore.launch.py"
 	bridge_tof = """
 	ros2 run ros_gz_bridge parameter_bridge \

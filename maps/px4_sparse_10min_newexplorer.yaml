@@ -1,0 +1,7 @@
+image: px4_sparse_10min_newexplorer.pgm
+mode: trinary
+resolution: 0.05
+origin: [-6.94, -5.84, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.25

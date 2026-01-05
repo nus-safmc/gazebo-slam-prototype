@@ -142,6 +142,8 @@ class Nav2FrontierExplorer(Node):
         self.clearance_min_start = float(
             self.declare_parameter('clearance_min_start', self.clearance_min_m).value
         )
+        self.frontier_sample_max = int(self.declare_parameter('frontier_sample_max', 60).value)
+        self.frontier_sample_max = max(5, min(400, self.frontier_sample_max))
         self._breadth_log_period = float(self.declare_parameter('breadth_log_sec', 8.0).value)
         self._breadth_next_log = 0.0
 
@@ -185,8 +187,14 @@ class Nav2FrontierExplorer(Node):
             self.create_subscription(LaserScan, self.scan_topic, self._scan_cb, scan_qos)
 
         self.timer = self.create_timer(0.5, self._tick)
+        arena_desc = 'disabled'
+        if self.arena_enabled:
+            arena_desc = (
+                f'x=[{self.arena_min_x:.2f},{self.arena_max_x:.2f}] '
+                f'y=[{self.arena_min_y:.2f},{self.arena_max_y:.2f}]'
+            )
         self.get_logger().info(
-            f'Nav2 frontier explorer online (map={self.map_topic}, frame={self.goal_frame}).'
+            f'Nav2 frontier explorer online (map={self.map_topic}, frame={self.goal_frame}, arena={arena_desc}).'
         )
 
     # ------------------------------------------------------------------
@@ -448,128 +456,119 @@ class Nav2FrontierExplorer(Node):
                 if len(cluster) * meta.res < min_frontier_len_m:
                     continue
 
-                # Compute centroid in grid coords.
-                sx = 0.0
-                sy = 0.0
-                for c in cluster:
-                    sx += c - (c // meta.width) * meta.width
-                    sy += c // meta.width
-                cx = sx / len(cluster)
-                cy = sy / len(cluster)
+                # For large frontier rings, picking a single "centroid" representative can
+                # cause huge backtracking (e.g., always picking the same point on the ring
+                # even after the robot moved). Sample along the cluster so the score can
+                # prefer the nearest reasonable frontier from the robot's current pose.
+                candidates = cluster
+                if len(candidates) > self.frontier_sample_max:
+                    step = max(1, len(candidates) // self.frontier_sample_max)
+                    candidates = [candidates[i] for i in range(0, len(candidates), step)]
 
-                # Choose representative frontier cell closest to centroid.
-                rep = min(
-                    cluster,
-                    key=lambda i: (
-                        (i - (i // meta.width) * meta.width - cx) ** 2
-                        + (i // meta.width - cy) ** 2
-                    ),
-                )
-                rep_x = rep - (rep // meta.width) * meta.width
-                rep_y = rep // meta.width
+                gain = float(len(cluster))
+                for rep in candidates:
+                    rep_x = rep - (rep // meta.width) * meta.width
+                    rep_y = rep // meta.width
 
-                # Estimate direction away from unknown and step inward.
-                vx = 0.0
-                vy = 0.0
-                for dx, dy in neighbors4:
-                    nidx = (rep_y + dy) * meta.width + (rep_x + dx)
-                    if unknown[nidx]:
-                        vx -= dx
-                        vy -= dy
-                if vx == 0.0 and vy == 0.0:
-                    # Fallback: move toward cluster centroid.
-                    vx = cx - rep_x
-                    vy = cy - rep_y
-                norm = math.hypot(vx, vy)
-                if norm <= 1e-6:
-                    continue
-                vx /= norm
-                vy /= norm
+                    # Estimate direction away from unknown and step inward.
+                    vx = 0.0
+                    vy = 0.0
+                    for dx, dy in neighbors4:
+                        nidx = (rep_y + dy) * meta.width + (rep_x + dx)
+                        if unknown[nidx]:
+                            vx -= dx
+                            vy -= dy
+                    if vx == 0.0 and vy == 0.0:
+                        continue
+                    norm = math.hypot(vx, vy)
+                    if norm <= 1e-6:
+                        continue
+                    vx /= norm
+                    vy /= norm
 
-                goal_ix = int(round(rep_x + vx * offset_cells))
-                goal_iy = int(round(rep_y + vy * offset_cells))
-                goal_ix = max(1, min(meta.width - 2, goal_ix))
-                goal_iy = max(1, min(meta.height - 2, goal_iy))
+                    goal_ix = int(round(rep_x + vx * offset_cells))
+                    goal_iy = int(round(rep_y + vy * offset_cells))
+                    goal_ix = max(1, min(meta.width - 2, goal_ix))
+                    goal_iy = max(1, min(meta.height - 2, goal_iy))
 
-                goal_idx = goal_iy * meta.width + goal_ix
-                if not free[goal_idx]:
-                    # Sparse maps (few beams / lots of unknown) often produce thin "spoke"
-                    # patterns of free cells. Try sliding back along the inward direction
-                    # until we hit free space, then (optionally) fall back to a local search.
-                    found = False
-                    for step in range(offset_cells, -1, -1):
-                        nx = int(round(rep_x + vx * step))
-                        ny = int(round(rep_y + vy * step))
-                        if (
-                            nx <= 0
-                            or nx >= meta.width - 1
-                            or ny <= 0
-                            or ny >= meta.height - 1
-                        ):
-                            continue
-                        nidx = ny * meta.width + nx
-                        if free[nidx]:
-                            goal_ix, goal_iy = nx, ny
-                            goal_idx = nidx
-                            found = True
-                            break
+                    goal_idx = goal_iy * meta.width + goal_ix
+                    if not free[goal_idx]:
+                        # Sparse maps (few beams / lots of unknown) often produce thin "spoke"
+                        # patterns of free cells. Try sliding back along the inward direction
+                        # until we hit free space, then (optionally) fall back to a local search.
+                        found = False
+                        for step_cells in range(offset_cells, -1, -1):
+                            nx = int(round(rep_x + vx * step_cells))
+                            ny = int(round(rep_y + vy * step_cells))
+                            if (
+                                nx <= 0
+                                or nx >= meta.width - 1
+                                or ny <= 0
+                                or ny >= meta.height - 1
+                            ):
+                                continue
+                            nidx = ny * meta.width + nx
+                            if free[nidx]:
+                                goal_ix, goal_iy = nx, ny
+                                goal_idx = nidx
+                                found = True
+                                break
 
-                    if not found:
-                        for radius in range(1, 10):
-                            for dx in range(-radius, radius + 1):
-                                for dy in range(-radius, radius + 1):
-                                    nx = rep_x + dx
-                                    ny = rep_y + dy
-                                    if (
-                                        nx <= 0
-                                        or nx >= meta.width - 1
-                                        or ny <= 0
-                                        or ny >= meta.height - 1
-                                    ):
-                                        continue
-                                    nidx = ny * meta.width + nx
-                                    if free[nidx]:
-                                        goal_ix, goal_iy = nx, ny
-                                        goal_idx = nidx
-                                        found = True
+                        if not found:
+                            for radius in range(1, 10):
+                                for dx in range(-radius, radius + 1):
+                                    for dy in range(-radius, radius + 1):
+                                        nx = rep_x + dx
+                                        ny = rep_y + dy
+                                        if (
+                                            nx <= 0
+                                            or nx >= meta.width - 1
+                                            or ny <= 0
+                                            or ny >= meta.height - 1
+                                        ):
+                                            continue
+                                        nidx = ny * meta.width + nx
+                                        if free[nidx]:
+                                            goal_ix, goal_iy = nx, ny
+                                            goal_idx = nidx
+                                            found = True
+                                            break
+                                    if found:
                                         break
                                 if found:
                                     break
-                            if found:
-                                break
-                    if not found:
+                        if not found:
+                            continue
+
+                    goal_x, goal_y = meta.cell_to_world(goal_ix, goal_iy)
+                    if cooldown > 0.0 and failed_sep > 0.0 and self._failed_goals:
+                        if any(
+                            math.hypot(goal_x - fx, goal_y - fy) < failed_sep
+                            for fx, fy, _ in self._failed_goals
+                        ):
+                            continue
+                    dist = math.hypot(goal_x - robot_x, goal_y - robot_y)
+                    if dist < min_goal_dist:
                         continue
 
-                goal_x, goal_y = meta.cell_to_world(goal_ix, goal_iy)
-                if cooldown > 0.0 and failed_sep > 0.0 and self._failed_goals:
-                    if any(
-                        math.hypot(goal_x - fx, goal_y - fy) < failed_sep
-                        for fx, fy, _ in self._failed_goals
-                    ):
-                        continue
-                dist = math.hypot(goal_x - robot_x, goal_y - robot_y)
-                if dist < min_goal_dist:
-                    continue
+                    score = self.gain_weight * gain - self.cost_weight * dist
+                    if clearance_cells[goal_idx] >= 0:
+                        clearance_m = clearance_cells[goal_idx] * meta.res
+                        if enforce_clearance and clearance_m < clearance_min:
+                            continue
+                        score += self.clearance_weight * clearance_m
+                        if clearance_m < clearance_min:
+                            score -= self.clearance_penalty * (clearance_min - clearance_m)
+                    if self._goal_history:
+                        min_sep = min(
+                            math.hypot(goal_x - gx, goal_y - gy) for gx, gy in self._goal_history
+                        )
+                        if min_sep < self.goal_min_sep:
+                            score -= self.repeat_penalty
 
-                gain = float(len(cluster))
-                score = self.gain_weight * gain - self.cost_weight * dist
-                if clearance_cells[goal_idx] >= 0:
-                    clearance_m = clearance_cells[goal_idx] * meta.res
-                    if enforce_clearance and clearance_m < clearance_min:
-                        continue
-                    score += self.clearance_weight * clearance_m
-                    if clearance_m < clearance_min:
-                        score -= self.clearance_penalty * (clearance_min - clearance_m)
-                if self._goal_history:
-                    min_sep = min(
-                        math.hypot(goal_x - gx, goal_y - gy) for gx, gy in self._goal_history
-                    )
-                    if min_sep < self.goal_min_sep:
-                        score -= self.repeat_penalty
-
-                if score > best_score:
-                    best_score = score
-                    best_goal = (goal_x, goal_y)
+                    if score > best_score:
+                        best_score = score
+                        best_goal = (goal_x, goal_y)
 
             return best_goal
 

@@ -47,7 +47,7 @@ controller_server:
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
-      xy_goal_tolerance: 0.20
+      xy_goal_tolerance: 0.35
       yaw_goal_tolerance: 0.5
 
     FollowPath:
@@ -57,22 +57,22 @@ controller_server:
       debug_trajectory_details: false
 
       # Velocity limits (holonomic)
-      min_vel_x: -0.08
-      max_vel_x: 0.14
-      min_vel_y: -0.08
-      max_vel_y: 0.10
-      max_vel_theta: 0.5
+      min_vel_x: -0.12
+      max_vel_x: 0.25
+      min_vel_y: -0.12
+      max_vel_y: 0.18
+      max_vel_theta: 0.8
       min_speed_xy: 0.0
-      max_speed_xy: 0.14
+      max_speed_xy: 0.25
       min_speed_theta: 0.0
 
       # Accel limits
-      acc_lim_x: 0.3
-      acc_lim_y: 0.3
-      acc_lim_theta: 0.7
-      decel_lim_x: -0.3
-      decel_lim_y: -0.3
-      decel_lim_theta: -0.7
+      acc_lim_x: 0.6
+      acc_lim_y: 0.6
+      acc_lim_theta: 1.2
+      decel_lim_x: -0.6
+      decel_lim_y: -0.6
+      decel_lim_theta: -1.2
 
       vx_samples: 15
       vy_samples: 11
@@ -81,7 +81,7 @@ controller_server:
       linear_granularity: 0.05
       angular_granularity: 0.025
       transform_tolerance: 0.2
-      xy_goal_tolerance: 0.20
+      xy_goal_tolerance: 0.35
       trans_stopped_velocity: 0.02
       short_circuit_trajectory_evaluation: true
 
@@ -152,7 +152,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.85
+        inflation_radius: 0.95
       always_send_full_costmap: True
 
 global_costmap:
@@ -165,7 +165,9 @@ global_costmap:
       robot_base_frame: robot/base_footprint
       robot_radius: 0.30
       resolution: 0.10
-      track_unknown_space: false
+      # Keep unknown cells as unknown so RViz/Nav2 doesn't treat the entire (unseen)
+      # arena as free space at startup.
+      track_unknown_space: true
       # Use the SLAM /map as the global source of obstacles; keep live scan
       # processing in the local costmap for more stable planning.
       plugins: ["static_layer", "inflation_layer"]
@@ -177,7 +179,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 1.00
+        inflation_radius: 1.10
       always_send_full_costmap: True
 
 planner_server:
@@ -252,10 +254,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.14, 0.10, 0.5]
-    min_velocity: [-0.08, -0.10, -0.5]
-    max_accel: [0.3, 0.3, 0.7]
-    max_decel: [-0.3, -0.3, -0.7]
+    max_velocity: [0.25, 0.18, 0.8]
+    min_velocity: [-0.12, -0.18, -0.8]
+    max_accel: [0.6, 0.6, 1.2]
+    max_decel: [-0.6, -0.6, -1.2]
     odom_topic: odom
     odom_duration: 0.15
     deadband_velocity: [0.0, 0.0, 0.0]

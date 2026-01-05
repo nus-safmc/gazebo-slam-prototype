@@ -23,6 +23,8 @@ If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of t
 - Expect ~20–30s for PX4 preflight → arm → takeoff; watch for `Ready for takeoff!`, `Armed by external command`, `Takeoff detected`.
 - Spawn pose is configurable via `px4_model_pose:=x,y,z,roll,pitch,yaw` (default `0,-2,0.2,0,0,0` to avoid the playfield's central pillar at the origin).
 - Altitude safety: `target_alt_m` is clamped to `max_alt_fraction * max_alt_m` (defaults: `0.6 * 2.0 = 1.2m`).
+- Exploration bounds: `arena_*` is **auto-inferred from the world SDF** (perimeter walls / ground plane). If you resize the playfield, the explorer will follow without needing hard-coded edits.
+- RViz map size note: `/map` grows as the drone explores; it won’t immediately show the full playfield extents until the vehicle has visited / scanned those areas.
 - To tail the latest log: `pixi run -e jazzy tail_log -- px4_nav2_explore` (or `pixi run -e jazzy tail_log -- px4_nav2_explore_playfield_full`)
   - PX4 track world defaults to `world:=playfield_px4_sparse.sdf` (~40×40 m, PX4-only; avoids spawning the legacy `rex_quadcopter`).
   - The older `playfield_sparse.sdf` / `playfield.sdf` worlds are fast-track oriented and include `rex_quadcopter` models, so they will spawn an extra drone if used with PX4.
