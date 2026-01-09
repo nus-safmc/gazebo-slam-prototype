@@ -12,16 +12,34 @@
 # Nav2 is our "GCS" in this stack; don't block arming/offboard due to missing GCS link.
 param set NAV_DLL_ACT 0
 
+# uXRCE-DDS timestamp sync can be noisy in simulation (especially on WSL / when sim runs <1.0x),
+# producing repeated "[timesync] time jump detected" warnings. We don't rely on agent<->PX4
+# time synchronization in this stack, so disable it for stability.
+param set UXRCE_DDS_SYNCT 0
+
 # Avoid EKF selector dependencies during SITL startup. Some airframes enable multi-EKF
 # (SENS_IMU_MODE=0), which expects estimator selector topics early and can trip
 # "Preflight Fail: ekf2 missing data". For this project we run a single EKF instance.
 param set SENS_IMU_MODE 1
 
-# External vision aiding (we publish Gazebo pose as `vehicle_visual_odometry`).
-param set EKF2_EV_CTRL 15
+# Slightly relax EKF innovation arming thresholds for SITL startup transients.
+# This keeps logs clean without changing runtime estimator behavior.
+param set COM_ARM_EKF_POS 1.0
+param set COM_ARM_EKF_VEL 1.0
+param set COM_ARM_EKF_HGT 2.0
+param set COM_ARM_EKF_YAW 1.0
 
-# The x500*_tof airframes disable GPS, so enable optical flow aiding.
+# External vision aiding (we publish Gazebo pose as `vehicle_visual_odometry`).
+# Fuse horizontal position + velocity + yaw, but NOT vertical position: height comes from baro/range.
+# This avoids "height estimate error" arming failures caused by small Z mismatches.
+param set EKF2_EV_CTRL 13
+# Use the barometer as the primary height reference.
+# The x500_small_tof airframe disables GPS; leaving EKF2_HGT_REF at the default (GPS) can trip height checks.
+param set EKF2_HGT_REF 0
+
+# The x500*_tof airframes disable GPS, so enable optical flow aiding (indoor flight).
 param set EKF2_OF_CTRL 1
+param set EKF2_RNG_CTRL 1
 
 # Sensor offsets for the `x500_small_tof` model (approx, FRD body frame).
 param set EKF2_OF_POS_X 0.0105

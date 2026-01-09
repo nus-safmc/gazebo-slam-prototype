@@ -60,6 +60,11 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Start Gazebo (gz sim) server with PX4 default world.',
     )
+    headless_rendering_arg = DeclareLaunchArgument(
+        'headless_rendering',
+        default_value='false',
+        description='Start Gazebo server with --headless-rendering (useful when no display is available).',
+    )
     px4_dir_arg = DeclareLaunchArgument(
         'px4_dir',
         default_value=_guess_px4_dir(),
@@ -88,6 +93,7 @@ def generate_launch_description() -> LaunchDescription:
 
     px4_dir = LaunchConfiguration('px4_dir')
     run_gz = LaunchConfiguration('run_gz')
+    headless_rendering = LaunchConfiguration('headless_rendering')
     world = LaunchConfiguration('world')
     gz_world_name = LaunchConfiguration('gz_world_name')
     use_visual_odometry = LaunchConfiguration('use_visual_odometry')
@@ -95,13 +101,13 @@ def generate_launch_description() -> LaunchDescription:
     set_gz_resource_path = SetEnvironmentVariable(
         name='GZ_SIM_RESOURCE_PATH',
         value=[
-            PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'models']),
-            ':',
-            PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'worlds']),
-            ':',
             PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'models']),
             ':',
             PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'worlds']),
+            ':',
+            PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'models']),
+            ':',
+            PathJoinSubstitution([px4_dir, 'Tools', 'simulation', 'gz', 'worlds']),
         ],
     )
 
@@ -122,6 +128,21 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     gz_world_path = PathJoinSubstitution([FindPackageShare('tof_slam_sim'), 'worlds', world])
+    gz_sim_headless = ExecuteProcess(
+        cmd=[
+            'gz',
+            'sim',
+            '--verbose=1',
+            '--headless-rendering',
+            '-r',
+            '-s',
+            gz_world_path,
+        ],
+        output='screen',
+        condition=IfCondition(
+            PythonExpression(["'", run_gz, "' == 'true' and '", headless_rendering, "' == 'true'"])
+        ),
+    )
     gz_sim = ExecuteProcess(
         cmd=[
             'gz',
@@ -132,7 +153,9 @@ def generate_launch_description() -> LaunchDescription:
             gz_world_path,
         ],
         output='screen',
-        condition=IfCondition(run_gz),
+        condition=IfCondition(
+            PythonExpression(["'", run_gz, "' == 'true' and '", headless_rendering, "' != 'true'"])
+        ),
     )
 
     gz_gui = ExecuteProcess(
@@ -171,19 +194,99 @@ def generate_launch_description() -> LaunchDescription:
             'ros_gz_bridge',
             'parameter_bridge',
             clock_bridge,
-            '/depth/tof_1@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_2@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_3@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_4@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_5@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_6@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_7@sensor_msgs/msg/Image[gz.msgs.Image',
-            '/depth/tof_8@sensor_msgs/msg/Image[gz.msgs.Image',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_1/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_2/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_3/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_4/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_5/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_6/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_7/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_8/depth_image@sensor_msgs/msg/Image[gz.msgs.Image"',
+            ]),
             '--ros-args',
             '-r',
             '__node:=ros_gz_bridge',
             '-r',
             clock_remap,
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_1/depth_image:=/depth/tof_1"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_2/depth_image:=/depth/tof_2"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_3/depth_image:=/depth/tof_3"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_4/depth_image:=/depth/tof_4"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_5/depth_image:=/depth/tof_5"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_6/depth_image:=/depth/tof_6"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_7/depth_image:=/depth/tof_7"',
+            ]),
+            '-r',
+            PythonExpression([
+                '"/world/" + "',
+                gz_world_name,
+                '" + "/model/x500_small_tof_0/link/tof_base_link/sensor/tof_8/depth_image:=/depth/tof_8"',
+            ]),
         ],
         output='screen',
         condition=IfCondition(LaunchConfiguration('run_bridge')),
@@ -205,7 +308,7 @@ def generate_launch_description() -> LaunchDescription:
     )
 
     micro_xrce_agent = ExecuteProcess(
-        cmd=['MicroXRCEAgent', 'udp4', '-p', '8888'],
+        cmd=['MicroXRCEAgent', 'udp4', '-p', '8888', '-v', '2'],
         output='screen',
         condition=IfCondition(LaunchConfiguration('run_agent')),
     )
@@ -261,6 +364,7 @@ def generate_launch_description() -> LaunchDescription:
             'use_sim_time': use_sim_time,
             'pose_topic': '/model/x500_small_tof_0/pose',
             'px4_time_topic': '/fmu/out/vehicle_odometry',
+            'px4_status_topic': '/fmu/out/vehicle_status',
             'px4_visual_odometry_topic': '/fmu/in/vehicle_visual_odometry',
             'publish_rate_hz': 30.0,
         }],
@@ -274,6 +378,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(gz_gui_arg)
     ld.add_action(use_visual_odometry_arg)
     ld.add_action(run_gz_arg)
+    ld.add_action(headless_rendering_arg)
     ld.add_action(px4_dir_arg)
     ld.add_action(run_px4_arg)
     ld.add_action(run_bridge_arg)
@@ -282,6 +387,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(set_gz_resource_path)
     ld.add_action(set_px4_rc_path)
     ld.add_action(set_px4_model_pose)
+    ld.add_action(gz_sim_headless)
     ld.add_action(gz_sim)
     ld.add_action(gz_gui)
     ld.add_action(px4_sitl)

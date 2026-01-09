@@ -86,10 +86,11 @@ class AutoPilot(Node):
         odom_topic = os.environ.get('AP_ODOM', '/odom')
         self.create_subscription(Odometry, odom_topic, self._odom_cb, qos_reliable(10))
 
-        # Rate
+        # Rate (timer is created after mode-specific init to avoid callbacks firing
+        # before all attributes are ready; TransformListener(spin_thread=True) can
+        # start spinning immediately).
         hz = float(os.environ.get('AP_RATE', '10.0'))
-        period = 1.0 / hz if hz > 0.0 else 0.1
-        self.timer = self.create_timer(period, self._tick)
+        self._tick_period = 1.0 / hz if hz > 0.0 else 0.1
 
         # TF buffer for frame transforms (map <-> odom)
         self._tf_buffer = Buffer()
@@ -201,6 +202,8 @@ class AutoPilot(Node):
                 f'Publishing Twist on {topic} @ {hz:.1f} Hz '
                 f'pattern={pattern_name} alt_ctrl={self.alt_enable}'
             )
+
+        self.timer = self.create_timer(self._tick_period, self._tick)
 
     # ------------------------------------------------------------------
     # Callbacks
@@ -746,6 +749,53 @@ class AutoPilot(Node):
             return None
         map_tx, map_ty, map_yaw = map_from_odom
         robot_map_x, robot_map_y = self._apply_transform(map_tx, map_ty, map_yaw, self._pose_x, self._pose_y)
+
+        # Downsample the occupancy grid for planning (critical for multi-robot swarms).
+        # The full-resolution map can be hundreds of thousands of cells; running the
+        # frontier planner at that resolution per-robot can starve control loops and
+        # lead to "hovering" even though scans/maps are flowing.
+        stride = max(1, int(getattr(self, '_map_stride', 1)))
+        if stride > 1:
+            free_thresh = int(self._free_thresh)
+            orig_w = width
+            orig_h = height
+            coarse_w = (orig_w + stride - 1) // stride
+            coarse_h = (orig_h + stride - 1) // stride
+            coarse = [-1] * (coarse_w * coarse_h)
+
+            for cy in range(coarse_h):
+                y0 = cy * stride
+                y1 = min(orig_h, y0 + stride)
+                for cx in range(coarse_w):
+                    x0 = cx * stride
+                    x1 = min(orig_w, x0 + stride)
+
+                    any_free = False
+                    any_occ = False
+                    for yy in range(y0, y1):
+                        base = yy * orig_w
+                        for xx in range(x0, x1):
+                            v = int(data[base + xx])
+                            if v == -1:
+                                continue
+                            if v > free_thresh:
+                                any_occ = True
+                                break
+                            any_free = True
+                        if any_occ:
+                            break
+
+                    idx = cy * coarse_w + cx
+                    if any_occ:
+                        coarse[idx] = 100
+                    elif any_free:
+                        coarse[idx] = 0
+
+            data = coarse
+            width = coarse_w
+            height = coarse_h
+            res = res * float(stride)
+            size = width * height
 
         if arena_enabled and not (
             arena_min_x <= robot_map_x <= arena_max_x and arena_min_y <= robot_map_y <= arena_max_y

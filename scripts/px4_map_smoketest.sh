@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# PX4 uXRCE-DDS endpoints are not reliably discovered via CycloneDDS in this stack.
+# Force FastDDS for all PX4 runs.
+export RMW_IMPLEMENTATION="rmw_fastrtps_cpp"
+unset CYCLONEDDS_URI
+
 usage() {
   cat >&2 <<'EOF'
 usage:

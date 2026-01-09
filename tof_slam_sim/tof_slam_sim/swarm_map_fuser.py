@@ -560,7 +560,9 @@ class SwarmMapFuser(Node):
         return msg
 
     def _publish(self) -> None:
-        if not self._dirty and self._published_once:
+        # Don't publish an all-unknown map at startup. Wait until we have at least one
+        # scan update so RViz doesn't show a pre-sized "arena" before mapping begins.
+        if not self._dirty:
             return
 
         grid = self._build_map()

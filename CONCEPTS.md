@@ -171,6 +171,39 @@ Useful launch flags:
 - `rviz:=false` (don’t start RViz)
 - `run_autopilot:=true run_nav2:=false run_explorer:=false` (lighter exploration for big swarms)
 
+### PX4 swarm run (PX4 SITL)
+
+This is the **PX4 SITL** version of the swarm stack (each robot is a PX4 instance via uXRCE-DDS).
+
+Spawn 5 drones with the spawn UI (default):
+
+```bash
+pixi run -e jazzy px4_swarm_fast
+```
+
+Spawn UI + show both Gazebo GUI and RViz:
+
+```bash
+pixi run -e jazzy px4_swarm_fast_view
+```
+
+Same as above but also write logs (and filter the CycloneDDS type-hash spam):
+
+```bash
+pixi run -e jazzy px4_swarm_fast_view_log
+```
+
+Change drone count:
+
+```bash
+pixi run -e jazzy px4_swarm_fast -- --num-drones 8
+```
+
+Notes:
+- Default world is `tof_slam_sim/worlds/playfield_px4_sparse_annex.sdf` (includes a connected annex room).
+- The annex is explorable but not spawnable (spawn UI restricts placements to the main field).
+- `/map` is not published until sensor data arrives (RViz won’t show a pre-sized map at startup).
+
 ### Single robot run
 
 ```bash

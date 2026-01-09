@@ -12,6 +12,7 @@ from px4_msgs.msg import (
     OffboardControlMode,
     TrajectorySetpoint,
     VehicleCommand,
+    VehicleLocalPosition,
     VehicleOdometry,
     VehicleStatus,
 )
@@ -96,6 +97,7 @@ class TwistToPX4Offboard(Node):
 
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
         self.declare_parameter('vehicle_odometry_topic', '/fmu/out/vehicle_odometry')
+        self.declare_parameter('vehicle_local_position_topic', '/fmu/out/vehicle_local_position')
         self.declare_parameter('publish_rate_hz', 20.0)
         self.declare_parameter('deadman_timeout_sec', 0.75)
 
@@ -113,6 +115,11 @@ class TwistToPX4Offboard(Node):
         self.declare_parameter('auto_offboard', True)
         self.declare_parameter('warmup_setpoints', 20)
         self.declare_parameter('command_period_sec', 2.0)
+        self.declare_parameter('vehicle_odom_timeout_sec', 1.0)
+        self.declare_parameter('require_preflight_checks_pass', False)
+        self.declare_parameter('require_local_position', True)
+        self.declare_parameter('require_battery_ok', True)
+        self.declare_parameter('require_healthy_sec', 2.0)
 
         self.declare_parameter('px4_target_system', 1)
         self.declare_parameter('px4_target_component', 1)
@@ -123,6 +130,10 @@ class TwistToPX4Offboard(Node):
         self._vehicle_odom_topic = (
             str(self.get_parameter('vehicle_odometry_topic').value).strip()
             or '/fmu/out/vehicle_odometry'
+        )
+        self._vehicle_local_position_topic = (
+            str(self.get_parameter('vehicle_local_position_topic').value).strip()
+            or '/fmu/out/vehicle_local_position'
         )
 
         self._publish_rate_hz = float(self.get_parameter('publish_rate_hz').value)
@@ -148,6 +159,17 @@ class TwistToPX4Offboard(Node):
         self._warmup_setpoints = max(0, int(self.get_parameter('warmup_setpoints').value))
         self._command_period_ns = int(
             float(self.get_parameter('command_period_sec').value) * 1e9
+        )
+        self._vehicle_odom_timeout_ns = int(
+            float(self.get_parameter('vehicle_odom_timeout_sec').value) * 1e9
+        )
+        self._require_preflight_checks_pass = bool(
+            self.get_parameter('require_preflight_checks_pass').value
+        )
+        self._require_local_position = bool(self.get_parameter('require_local_position').value)
+        self._require_battery_ok = bool(self.get_parameter('require_battery_ok').value)
+        self._require_healthy_ns = int(
+            float(self.get_parameter('require_healthy_sec').value) * 1e9
         )
 
         self._target_system = int(self.get_parameter('px4_target_system').value)
@@ -201,11 +223,19 @@ class TwistToPX4Offboard(Node):
         )
 
         self._latest_vehicle_odom: Optional[_Latest] = None
-        self._px4_ts_us: Optional[int] = None
+        self._latest_local_position: Optional[_Latest] = None
+        self._px4_time_base_us: Optional[int] = None
+        self._px4_time_base_ns: Optional[int] = None
         self.create_subscription(
             VehicleOdometry,
             self._vehicle_odom_topic,
             self._on_vehicle_odometry,
+            qos_px4_out,
+        )
+        self.create_subscription(
+            VehicleLocalPosition,
+            self._vehicle_local_position_topic,
+            self._on_vehicle_local_position,
             qos_px4_out,
         )
 
@@ -215,6 +245,8 @@ class TwistToPX4Offboard(Node):
         self._setpoint_count = 0
         self._last_mode_cmd_ns: Optional[int] = None
         self._last_arm_cmd_ns: Optional[int] = None
+        self._healthy_since_ns: Optional[int] = None
+        self._warned_waiting_for_odom = False
 
         period = 1.0 / self._publish_rate_hz
         self.create_timer(period, self._tick)
@@ -222,6 +254,7 @@ class TwistToPX4Offboard(Node):
         self.get_logger().info(
             'PX4 offboard bridge online: '
             f'cmd_vel={self._cmd_vel_topic} vehicle_odom={self._vehicle_odom_topic} '
+            f'vehicle_local_position={self._vehicle_local_position_topic} '
             f'rate={self._publish_rate_hz:.1f}Hz target_alt={self._target_alt_m:.2f}m '
             f'(cap={self._target_alt_m_effective():.2f}m) '
             f'auto_offboard={self._auto_offboard} auto_arm={self._auto_arm}'
@@ -239,12 +272,21 @@ class TwistToPX4Offboard(Node):
         return int(self._now_ns() // 1000)
 
     def _px4_now_us(self) -> int:
-        if self._px4_ts_us is not None:
-            return int(self._px4_ts_us)
-        return self._now_us()
+        if self._px4_time_base_us is None or self._px4_time_base_ns is None:
+            return self._now_us()
+        now_ns = self._now_ns()
+        dt_us = max(0, (now_ns - self._px4_time_base_ns) // 1000)
+        return int(self._px4_time_base_us + dt_us)
+
+    def _update_time_base(self, ts_us: int) -> None:
+        now_ns = self._now_ns()
+        self._px4_time_base_us = int(ts_us)
+        self._px4_time_base_ns = int(now_ns)
 
     def _on_status(self, msg: VehicleStatus) -> None:
         self._status = msg
+        if self._px4_time_base_us is None:
+            self._update_time_base(int(msg.timestamp))
 
     def _on_failsafe_flags(self, msg: FailsafeFlags) -> None:
         self._failsafe_flags = msg
@@ -253,8 +295,12 @@ class TwistToPX4Offboard(Node):
         self._latest_cmd = _Latest(msg=msg, stamp_ns=self._now_ns())
 
     def _on_vehicle_odometry(self, msg: VehicleOdometry) -> None:
-        self._px4_ts_us = int(msg.timestamp)
+        self._update_time_base(int(msg.timestamp))
         self._latest_vehicle_odom = _Latest(msg=msg, stamp_ns=self._now_ns())
+
+    def _on_vehicle_local_position(self, msg: VehicleLocalPosition) -> None:
+        self._update_time_base(int(msg.timestamp))
+        self._latest_local_position = _Latest(msg=msg, stamp_ns=self._now_ns())
 
     def _send_vehicle_command(
         self,
@@ -286,11 +332,59 @@ class TwistToPX4Offboard(Node):
         msg.from_external = True
         self._cmd_pub.publish(msg)
 
+    def _is_ready_to_publish_setpoints(self, now_ns: int) -> bool:
+        if self._px4_time_base_us is None:
+            return False
+
+        candidates: list[_Latest] = []
+        if self._latest_vehicle_odom is not None:
+            candidates.append(self._latest_vehicle_odom)
+        if self._latest_local_position is not None:
+            candidates.append(self._latest_local_position)
+        if not candidates:
+            return False
+        latest = max(candidates, key=lambda c: int(c.stamp_ns))
+        return now_ns - latest.stamp_ns <= self._vehicle_odom_timeout_ns
+
+    def _is_healthy_for_arm_offboard(self) -> bool:
+        status = self._status
+        flags = self._failsafe_flags
+        if status is None or flags is None:
+            return False
+
+        if self._require_preflight_checks_pass and not bool(status.pre_flight_checks_pass):
+            return False
+
+        if bool(status.failsafe):
+            return False
+
+        if self._require_local_position and (
+            bool(flags.local_position_invalid_relaxed) or bool(flags.local_position_invalid)
+        ):
+            return False
+
+        if self._require_battery_ok and (
+            bool(flags.battery_unhealthy) or int(flags.battery_warning) != 0
+        ):
+            return False
+
+        return True
+
     def _maybe_send_offboard_and_arm(self, now_ns: int) -> None:
         if not self._auto_offboard and not self._auto_arm:
             return
         if self._setpoint_count < self._warmup_setpoints:
             return
+
+        if not self._is_healthy_for_arm_offboard():
+            self._healthy_since_ns = None
+            return
+        if self._require_healthy_ns > 0:
+            if self._healthy_since_ns is None:
+                self._healthy_since_ns = now_ns
+                return
+            if now_ns - self._healthy_since_ns < self._require_healthy_ns:
+                return
 
         armed = False
         offboard = False
@@ -298,12 +392,7 @@ class TwistToPX4Offboard(Node):
             armed = self._status.arming_state == VehicleStatus.ARMING_STATE_ARMED
             offboard = self._status.nav_state == VehicleStatus.NAVIGATION_STATE_OFFBOARD
 
-        local_pos_ok = True
-        flags = self._failsafe_flags
-        if flags is not None and flags.local_position_invalid_relaxed:
-            local_pos_ok = False
-
-        if self._auto_offboard and not offboard and local_pos_ok:
+        if self._auto_offboard and not offboard:
             if (
                 self._last_mode_cmd_ns is None
                 or now_ns - self._last_mode_cmd_ns >= self._command_period_ns
@@ -314,7 +403,7 @@ class TwistToPX4Offboard(Node):
                 )
                 self._last_mode_cmd_ns = now_ns
 
-        if self._auto_arm and not armed and local_pos_ok:
+        if self._auto_arm and not armed:
             if (
                 self._last_arm_cmd_ns is None
                 or now_ns - self._last_arm_cmd_ns >= self._command_period_ns
@@ -331,28 +420,48 @@ class TwistToPX4Offboard(Node):
         return cmd.msg  # type: ignore[return-value]
 
     def _desired_vertical_speed_down(self) -> float:
-        vehicle_odom = self._latest_vehicle_odom
-        if vehicle_odom is None:
+        pd: Optional[float] = None
+        if self._latest_local_position is not None:
+            lp: VehicleLocalPosition = self._latest_local_position.msg  # type: ignore[assignment]
+            if bool(lp.z_valid) and _is_finite(lp.z):
+                pd = float(lp.z)
+        if pd is None and self._latest_vehicle_odom is not None:
+            odom: VehicleOdometry = self._latest_vehicle_odom.msg  # type: ignore[assignment]
+            if _is_finite(odom.position[2]):
+                pd = float(odom.position[2])
+        if pd is None:
             return 0.0
 
-        msg: VehicleOdometry = vehicle_odom.msg  # type: ignore[assignment]
-        pd = float(msg.position[2])
-        if not _is_finite(pd):
-            return 0.0
-        z_up = -pd
+        z_up = -float(pd)
         v_up = self._alt_kp * (self._target_alt_m_effective() - z_up)
         v_up = _clamp(v_up, -self._max_descend_mps, self._max_climb_mps)
         return -v_up
 
     def _yaw_enu(self) -> Optional[float]:
-        vehicle_odom = self._latest_vehicle_odom
-        if vehicle_odom is None:
-            return None
-        msg: VehicleOdometry = vehicle_odom.msg  # type: ignore[assignment]
-        return _yaw_enu_from_px4_q(list(msg.q))
+        if self._latest_local_position is not None:
+            lp: VehicleLocalPosition = self._latest_local_position.msg  # type: ignore[assignment]
+            if bool(lp.heading_good_for_control) and _is_finite(lp.heading):
+                yaw_enu = (math.pi / 2.0) - float(lp.heading)
+                return math.atan2(math.sin(yaw_enu), math.cos(yaw_enu))
+
+        if self._latest_vehicle_odom is not None:
+            msg: VehicleOdometry = self._latest_vehicle_odom.msg  # type: ignore[assignment]
+            return _yaw_enu_from_px4_q(list(msg.q))
+        return None
 
     def _tick(self) -> None:
         now_ns = self._now_ns()
+
+        if not self._is_ready_to_publish_setpoints(now_ns):
+            self._healthy_since_ns = None
+            if not self._warned_waiting_for_odom:
+                self._warned_waiting_for_odom = True
+                self.get_logger().warn(
+                    'Waiting for fresh PX4 state before publishing offboard setpoints '
+                    f'(vehicle_odometry={self._vehicle_odom_topic}, '
+                    f'vehicle_local_position={self._vehicle_local_position_topic}).'
+                )
+            return
 
         offboard = OffboardControlMode()
         offboard.timestamp = self._px4_now_us()

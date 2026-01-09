@@ -57,11 +57,13 @@ pkill -f '[t]of_slam_sim/map_tf_fallback' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/arena_map_padder' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/nav2_frontier_explorer' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/tof_to_scan\.py' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/gz_pose_info_to_pose_stamped' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/pose_to_tf\.py' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/pose_to_px4_visual_odometry' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/pose_to_odom' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/px4_vehicle_odometry_to_odom' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/twist_to_px4_offboard' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/drone_health_dashboard' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/tof8x8_to_scan(\.py)?' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/test_controller(\.py)?' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/scripts/log_monitor\.py' 2>/dev/null || true

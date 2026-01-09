@@ -124,6 +124,12 @@ def _make_bridge_node(context, *, use_sim_time):
 def _make_gz_processes(context):
     world_value = str(LaunchConfiguration('world').perform(context)).strip()
     world_value = os.path.expanduser(world_value)
+    headless_rendering = str(LaunchConfiguration('headless_rendering').perform(context)).strip().lower() in (
+        '1',
+        'true',
+        'yes',
+        'on',
+    )
 
     if os.path.isabs(world_value) or '/' in world_value:
         world_path = world_value
@@ -132,9 +138,13 @@ def _make_gz_processes(context):
         world_path = os.path.join(pkg_share_path, 'worlds', world_value)
 
     if platform.system() == 'Darwin':
+        sim_cmd = ['gz', 'sim']
+        if headless_rendering:
+            sim_cmd.append('--headless-rendering')
+        sim_cmd.extend(['-s', '-r', world_path])
         return [
             ExecuteProcess(
-                cmd=['gz', 'sim', '-s', '-r', world_path],
+                cmd=sim_cmd,
                 output='screen',
             ),
             ExecuteProcess(
@@ -143,9 +153,13 @@ def _make_gz_processes(context):
             ),
         ]
 
+    sim_cmd = ['gz', 'sim']
+    if headless_rendering:
+        sim_cmd.append('--headless-rendering')
+    sim_cmd.extend(['-r', world_path])
     return [
         ExecuteProcess(
-            cmd=['gz', 'sim', '-r', world_path],
+            cmd=sim_cmd,
             output='screen',
         )
     ]
@@ -217,6 +231,11 @@ def generate_launch_description() -> LaunchDescription:
         'world',
         default_value='playfield_sparse.sdf',
         description='World file (SDF) under tof_slam_sim/worlds.',
+    )
+    headless_rendering_arg = DeclareLaunchArgument(
+        'headless_rendering',
+        default_value='false',
+        description='Start Gazebo server with --headless-rendering (useful when no display is available).',
     )
     robots_arg = DeclareLaunchArgument(
         'robots',
@@ -338,6 +357,7 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(run_logger_arg)
     ld.add_action(use_sim_time_arg)
     ld.add_action(world_arg)
+    ld.add_action(headless_rendering_arg)
     ld.add_action(robots_arg)
     ld.add_action(bridge_world_arg)
 

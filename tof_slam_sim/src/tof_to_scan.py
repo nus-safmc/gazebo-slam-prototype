@@ -16,13 +16,23 @@ class TofToScan(Node):
     def __init__(self):
         super().__init__('TofToScan')
 
+        self.depth_topic_prefix = (
+            self.declare_parameter('depth_topic_prefix', 'depth')
+            .get_parameter_value()
+            .string_value
+            .strip()
+        )
+        if not self.depth_topic_prefix:
+            self.depth_topic_prefix = 'depth'
+        self.depth_topic_prefix = self.depth_topic_prefix.rstrip('/')
+
         self.output_frame = (
             self.declare_parameter('output_frame', 'robot/base_link')
             .get_parameter_value()
             .string_value
         )
         self.output_topic = (
-            self.declare_parameter('output_topic', '/scan_merged')
+            self.declare_parameter('output_topic', 'scan_merged')
             .get_parameter_value()
             .string_value
         )
@@ -43,7 +53,9 @@ class TofToScan(Node):
 
         # QoS profile for depth data
         depth_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            # ros_gz_bridge publishes depth images as RELIABLE by default; match it so
+            # the ToF pipeline receives sensor data consistently.
+            reliability=ReliabilityPolicy.RELIABLE,
             history=HistoryPolicy.KEEP_LAST,
             depth=5
         )
@@ -125,7 +137,7 @@ class TofToScan(Node):
         self._latest: list[Optional[Image]] = [None] * 8
 
         for i in range(8):
-            topic = f'/depth/tof_{i+1}'
+            topic = f'{self.depth_topic_prefix}/tof_{i+1}'
 
             def _make_cb(index: int):
                 def _cb(msg: Image) -> None:
@@ -136,7 +148,9 @@ class TofToScan(Node):
             self.create_subscription(Image, topic, _make_cb(i), depth_qos)
 
         scan_qos = QoSProfile(
-            reliability=ReliabilityPolicy.RELIABLE,
+            # LaserScan is high-rate sensor data; BEST_EFFORT matches common ROS sensor QoS
+            # (and allows downstream consumers like AutoPilot to subscribe reliably).
+            reliability=ReliabilityPolicy.BEST_EFFORT,
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
@@ -191,6 +205,12 @@ class TofToScan(Node):
 
     def _publish_scan(self) -> None:
         images = self._latest
+
+        # Avoid publishing "empty" scans before any sensor data arrives. This prevents downstream
+        # mappers (slam_toolbox / swarm_map_fuser) from publishing a pre-sized all-unknown map at
+        # startup.
+        if all(img is None for img in images):
+            return
 
         try:
             merged_scan = LaserScan()
