@@ -11,10 +11,13 @@ from typing import Optional
 import rclpy
 from geometry_msgs.msg import Point, Pose, PoseArray, Twist
 from nav_msgs.msg import Odometry
+from rclpy.duration import Duration
 from rclpy.executors import SingleThreadedExecutor
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
+from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
+from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import Marker, MarkerArray
 
 
@@ -149,6 +152,14 @@ class DroneHealthDashboard(Node):
             self._subs.append(self.create_subscription(Twist, cmd_topic, self._mk_cmd_cb(r), cmd_qos))
             self._subs.append(self.create_subscription(LaserScan, scan_topic, self._mk_scan_cb(r), scan_qos))
 
+        # Transform odom poses into the shared map frame so RViz markers line up with
+        # the spawn-selector coordinates (which are expressed in Gazebo/world XY).
+        self._tf_buffer = Buffer()
+        # We already spin this node (either via rclpy.spin or an Executor thread for the UI),
+        # so we don't need an extra TF listener thread.
+        self._tf_listener = TransformListener(self._tf_buffer, self, spin_thread=False)
+        self._tf_warned: set[str] = set()
+
         self._markers_pub = self.create_publisher(MarkerArray, self._marker_topic, 10)
         self._poses_pub = self.create_publisher(PoseArray, self._pose_topic, 10)
 
@@ -167,11 +178,52 @@ class DroneHealthDashboard(Node):
             p = msg.pose.pose.position
             q = msg.pose.pose.orientation
             yaw = _yaw_from_quat(q.x, q.y, q.z, q.w)
+
+            x = float(p.x)
+            y = float(p.y)
+            yaw_out = float(yaw)
+
+            # Odometry pose is expressed in msg.header.frame_id (e.g. robot/odom). Convert to map frame.
+            try:
+                stamp = Time.from_msg(msg.header.stamp)
+            except Exception:
+                stamp = Time()
+            if stamp.nanoseconds == 0:
+                stamp = self.get_clock().now()
+            try:
+                tf = self._tf_buffer.lookup_transform(
+                    self._map_frame,
+                    str(msg.header.frame_id),
+                    stamp,
+                    timeout=Duration(seconds=0.05),
+                )
+                tx = float(tf.transform.translation.x)
+                ty = float(tf.transform.translation.y)
+                tyaw = _yaw_from_quat(
+                    tf.transform.rotation.x,
+                    tf.transform.rotation.y,
+                    tf.transform.rotation.z,
+                    tf.transform.rotation.w,
+                )
+                c = math.cos(tyaw)
+                s = math.sin(tyaw)
+                x_map = tx + c * x - s * y
+                y_map = ty + s * x + c * y
+                x = float(x_map)
+                y = float(y_map)
+                yaw_out = float(tyaw + yaw_out)
+            except TransformException:
+                if robot not in self._tf_warned:
+                    self._tf_warned.add(robot)
+                    self.get_logger().warn(
+                        f'{robot}: TF unavailable for {self._map_frame} <- {msg.header.frame_id}; '
+                        'publishing markers in odom coordinates until TF arrives.'
+                    )
             with self._lock:
                 h = self._health[robot]
-                h.x = float(p.x)
-                h.y = float(p.y)
-                h.yaw = float(yaw)
+                h.x = float(x)
+                h.y = float(y)
+                h.yaw = float(yaw_out)
                 h.have_odom = True
                 h.odom_stamp_s = now_s
                 h.trail.append((h.x, h.y))
