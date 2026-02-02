@@ -3,8 +3,7 @@
 
 This node selects frontier clusters (free cells adjacent to unknown) from an
 OccupancyGrid map and sends sequential NavigateToPose goals to Nav2.
-"""
-
+""" 
 from __future__ import annotations
 
 import math
@@ -24,6 +23,7 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
+from rcl_interfaces.msg import SetParametersResult
 
 
 def _yaw_from_quat(x: float, y: float, z: float, w: float) -> float:
@@ -80,7 +80,7 @@ class Nav2FrontierExplorer(Node):
         self.free_thresh = int(self.declare_parameter('free_threshold', 30).value)
         self.occupied_thresh = int(self.declare_parameter('occupied_threshold', 65).value)
         self.min_cluster = int(self.declare_parameter('min_frontier_cluster_size', 6).value)
-        self.goal_offset_m = float(self.declare_parameter('goal_offset_m', 0.6).value)
+        self.goal_offset_m = float(self.declare_parameter('goal_offset_m', 0.4).value)
         self.goal_timeout = float(self.declare_parameter('goal_timeout_sec', 25.0).value)
         self.replan_period = float(self.declare_parameter('replan_period_sec', 2.0).value)
         self.goal_min_sep = float(self.declare_parameter('goal_min_separation_m', 1.5).value)
@@ -88,15 +88,15 @@ class Nav2FrontierExplorer(Node):
         self.gain_weight = float(self.declare_parameter('gain_weight', 1.0).value)
         self.cost_weight = float(self.declare_parameter('cost_weight', 0.35).value)
         self.clearance_weight = float(self.declare_parameter('clearance_weight', 6.0).value)
-        self.clearance_min_m = float(self.declare_parameter('clearance_min_m', 0.6).value)
+        self.clearance_min_m = float(self.declare_parameter('clearance_min_m', 0.5).value)
         self.clearance_penalty = float(self.declare_parameter('clearance_penalty', 12.0).value)
 
         # Hard arena bounds (map frame) to prevent "chasing" unknown space outside perimeter walls.
         self.arena_enabled = bool(self.declare_parameter('arena_enabled', True).value)
-        self.arena_min_x = float(self.declare_parameter('arena_min_x', -19.4).value)
-        self.arena_max_x = float(self.declare_parameter('arena_max_x', 19.4).value)
-        self.arena_min_y = float(self.declare_parameter('arena_min_y', -19.4).value)
-        self.arena_max_y = float(self.declare_parameter('arena_max_y', 19.4).value)
+        self.arena_min_x = float(self.declare_parameter('arena_min_x', -9.4).value)
+        self.arena_max_x = float(self.declare_parameter('arena_max_x', 9.4).value)
+        self.arena_min_y = float(self.declare_parameter('arena_min_y', -9.4).value)
+        self.arena_max_y = float(self.declare_parameter('arena_max_y', 9.4).value)
 
         # Failure handling: detect wall contact + no motion and stop exploring.
         self.crash_detection_enabled = bool(self.declare_parameter('crash_detection_enabled', True).value)
@@ -112,13 +112,13 @@ class Nav2FrontierExplorer(Node):
         self.breadth_cov_lo = float(self.declare_parameter('breadth_cov_lo', 0.10).value)
         self.breadth_cov_hi = float(self.declare_parameter('breadth_cov_hi', 0.75).value)
         self.breadth_min_frontier_m_start = float(
-            self.declare_parameter('breadth_min_frontier_m_start', 2.0).value
+            self.declare_parameter('breadth_min_frontier_m_start', 1.2).value
         )
         self.breadth_min_frontier_m_end = float(
             self.declare_parameter('breadth_min_frontier_m_end', 0.4).value
         )
         self.breadth_min_goal_dist_start = float(
-            self.declare_parameter('breadth_min_goal_dist_start', 2.5).value
+            self.declare_parameter('breadth_min_goal_dist_start', 1.5).value
         )
         self.breadth_min_goal_dist_end = float(
             self.declare_parameter('breadth_min_goal_dist_end', 0.8).value
@@ -172,10 +172,22 @@ class Nav2FrontierExplorer(Node):
             f'Nav2 frontier explorer online (map={self.map_topic}, frame={self.goal_frame}).'
         )
 
+        self.swarm_robots = self.declare_parameter('swarm_robots', ['robot']).value
+        self.robot_name = self.get_namespace().strip('/') or 'robot'
+
+        self.enabled = self.declare_parameter('enabled', False) #only enabled after the beginning spreadout
+
+        self.add_on_set_parameters_callback(self._on_set_param_cb)
+
     # ------------------------------------------------------------------
     # ROS callbacks / helpers
     # ------------------------------------------------------------------
-
+    def _on_set_param_cb(self, params):
+        for p in params:
+            if p.name in ['arena_min_x', 'arena_max_x', 'enabled']:
+                self.get_logger().info(f'area updated dynamically: {p.name} -> {p.value}')
+        return SetParametersResult(successful=True)
+    
     def _map_cb(self, msg: OccupancyGrid) -> None:
         self._map = msg
 
@@ -223,6 +235,18 @@ class Nav2FrontierExplorer(Node):
             origin_y=float(o.position.y),
             origin_yaw=yaw,
         )
+    def _get_neighbor_positions(self) -> list[tuple[float, float]]:
+        neighbors = []
+        for r in self.swarm_robots:
+            if r == self.robot_name: continue
+            try:
+                t = self._tf_buffer.lookup_transform(
+                    self.goal_frame, f'{r}/base_link', Time(), timeout=Duration(seconds=0.01)
+                )
+                neighbors.append((t.transform.translation.x, t.transform.translation.y))
+            except TransformException:
+                continue
+        return neighbors
 
     def _find_frontier_goal(
         self,
@@ -238,10 +262,10 @@ class Nav2FrontierExplorer(Node):
             return None
 
         arena_enabled = bool(getattr(self, 'arena_enabled', False))
-        arena_min_x = float(getattr(self, 'arena_min_x', -math.inf))
-        arena_max_x = float(getattr(self, 'arena_max_x', math.inf))
-        arena_min_y = float(getattr(self, 'arena_min_y', -math.inf))
-        arena_max_y = float(getattr(self, 'arena_max_y', math.inf))
+        arena_min_x = self.get_parameter('arena_min_x').value
+        arena_max_x = self.get_parameter('arena_max_x').value
+        arena_min_y = self.get_parameter('arena_min_y').value
+        arena_max_y = self.get_parameter('arena_max_y').value
         robot_x, robot_y = robot_xy
         if arena_enabled and not (
             arena_min_x <= robot_x <= arena_max_x and arena_min_y <= robot_y <= arena_max_y
@@ -284,7 +308,7 @@ class Nav2FrontierExplorer(Node):
                 if not (
                     arena_min_x <= wx <= arena_max_x and arena_min_y <= wy <= arena_max_y
                 ):
-                    obstacle[i] = 1
+                    # obstacle[i] = 1
                     continue
 
             v = int(data[i])
@@ -411,13 +435,20 @@ class Nav2FrontierExplorer(Node):
 
         offset_cells = max(1, int(math.ceil(self.goal_offset_m / meta.res)))
 
+        neighbor_poses = self._get_neighbor_positions()
+        rx, ry = robot_xy
+
         def _pick_goal(
             min_frontier_len_m: float,
             min_goal_dist: float,
             clearance_min: float,
+            use_voronoi = True
         ) -> Optional[tuple[float, float]]:
             best_score = -1e12
             best_goal: Optional[tuple[float, float]] = None
+
+            rejected_count = 0
+            total_clusters = len(clusters)
 
             for cluster in clusters:
                 if len(cluster) * meta.res < min_frontier_len_m:
@@ -431,6 +462,13 @@ class Nav2FrontierExplorer(Node):
                     sy += c // meta.width
                 cx = sx / len(cluster)
                 cy = sy / len(cluster)
+
+                if use_voronoi and neighbor_poses:
+                    cx_w, cy_w = meta.cell_to_world(int(cx), int(cy))
+                    dist_to_me = math.hypot(cx_w - robot_x, cy_w - robot_y)
+                    if any(math.hypot(cx_w - nx, cy_w - ny) < dist_to_me for nx, ny in neighbor_poses):
+                        rejected_count += 1
+                        continue 
 
                 # Choose representative frontier cell closest to centroid.
                 rep = min(
@@ -499,9 +537,13 @@ class Nav2FrontierExplorer(Node):
                 dist = math.hypot(goal_x - robot_x, goal_y - robot_y)
                 if dist < min_goal_dist:
                     continue
-
+                depth_weight = 1.5
+                lane_bonus_val = 5.0 
                 gain = float(len(cluster))
-                score = self.gain_weight * gain - self.cost_weight * dist
+                lane_bonus = lane_bonus_val if (arena_min_x <= goal_x <= arena_max_x) else 0.0
+                
+                score = (self.gain_weight * gain) + (depth_weight * goal_y) - (self.cost_weight * dist)
+                score = score + lane_bonus
                 if clearance_cells[goal_idx] >= 0:
                     clearance_m = clearance_cells[goal_idx] * meta.res
                     score += self.clearance_weight * clearance_m
@@ -518,11 +560,15 @@ class Nav2FrontierExplorer(Node):
                     best_score = score
                     best_goal = (goal_x, goal_y)
 
+            if use_voronoi:
+                self.get_logger().info(
+                    f"Voronoi Filter: {rejected_count}/{total_clusters} clusters assigned to neighbors."
+                )
             return best_goal
-
-        goal = _pick_goal(min_frontier_m, min_goal_dist_m, clearance_min_m)
+       
+        goal = _pick_goal(min_frontier_m, min_goal_dist_m, clearance_min_m, use_voronoi=True)
         if self.breadth_first and goal is None and (min_frontier_m > 0.0 or min_goal_dist_m > 0.0):
-            goal = _pick_goal(0.0, 0.0, self.clearance_min_m)
+            goal = _pick_goal(0.0, 0.0, self.clearance_min_m, use_voronoi=False)
         return goal
 
     # ------------------------------------------------------------------
@@ -648,6 +694,9 @@ class Nav2FrontierExplorer(Node):
         self._cancel_goal(reason='crash')
 
     def _tick(self) -> None:
+        if not self.get_parameter('enabled').value:
+            return
+        
         if self._crashed and self.crash_latch:
             if self._goal_handle is not None:
                 self._cancel_goal(reason='crash')
@@ -682,9 +731,23 @@ class Nav2FrontierExplorer(Node):
         if pose is None:
             return
         rx, ry, _ = pose
+        # In nav2_frontier_explorer.py -> _tick function
         goal = self._find_frontier_goal(self._map, (rx, ry))
+
         if goal is None:
-            return
+            # 1. Log the exhaustion
+            self.get_logger().warn(f'[{self.robot_name}] Lane exhausted. Expanding search bounds...')
+            
+            # 2. Dynamically expand the X limits by 1.5 meters
+            current_min_x = self.get_parameter('arena_min_x').value
+            current_max_x = self.get_parameter('arena_max_x').value
+            
+            # Update parameters to look at neighboring lanes
+            # This triggers the callback you added earlier
+            self.set_parameters([
+                rclpy.parameter.Parameter('arena_min_x', rclpy.Parameter.Type.DOUBLE, current_min_x - 2.0),
+                rclpy.parameter.Parameter('arena_max_x', rclpy.Parameter.Type.DOUBLE, current_max_x + 2.0)
+            ])
 
         gx, gy = goal
         yaw = math.atan2(gy - ry, gx - rx)

@@ -57,7 +57,8 @@ set(_python_nodes
   "tof_slam_sim.nav2_frontier_explorer:main:nav2_frontier_explorer"
   "tof_slam_sim.topic_monitor:main:topic_monitor"
   "tof_slam_sim.drone_health_dashboard:main:drone_health_dashboard"
-)
+  "tof_slam_sim.swarm_mission_manager:main:swarm_mission_manager"
+  )
 
 foreach(entry IN LISTS _python_nodes)
   string(REPLACE ":" ";" parts "${entry}")

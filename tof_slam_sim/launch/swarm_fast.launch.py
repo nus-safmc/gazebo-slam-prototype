@@ -41,6 +41,7 @@ def _truthy(value: object) -> bool:
 
 
 def _parse_robots(context) -> list[str]:
+
     num_raw = str(LaunchConfiguration('num_robots').perform(context)).strip()
     if num_raw:
         try:
@@ -129,6 +130,7 @@ def _write_nav2_params(*, base_path: str, robot: str) -> str:
 
 def _nav2_actions(context):
     robots = _parse_robots(context)
+    num_robots_total = len(robots)
 
     use_sim_time_str = LaunchConfiguration('use_sim_time').perform(context)
     use_sim_time = _truthy(use_sim_time_str)
@@ -139,8 +141,8 @@ def _nav2_actions(context):
 
     if run_autopilot:
         # Use the repo's exploration autopilot (one per robot) instead of Nav2.
-        lo = -18.4
-        hi = 18.4
+        lo = -9.4
+        hi = 9.4
         overlap = 0.6
         cells = _split_arena(robots=robots, lo=lo, hi=hi, overlap=overlap)
 
@@ -198,8 +200,8 @@ def _nav2_actions(context):
     # Split arena into 4 overlapping quadrants so robots spread out instead of chasing the same frontier.
     # Keep a margin from the perimeter walls / keepout band so Nav2 doesn't end up with a
     # "start occupied" condition when a robot gets too close to the border.
-    lo = -18.4
-    hi = 18.4
+    lo = -9.4
+    hi = 9.4
     overlap = 0.6
     cells = _split_arena(robots=robots, lo=lo, hi=hi, overlap=overlap)
 
@@ -207,6 +209,20 @@ def _nav2_actions(context):
     for r in robots:
         ns = '' if r == 'robot' else r
         robot_params = _write_nav2_params(base_path=str(params_path), robot=r)
+        
+        actions.append(
+            Node(
+                package='tof_slam_sim',
+                executable='swarm_mission_manager',
+                name='mission_manager',
+                namespace=ns,
+                output='screen',
+                parameters=[{
+                    'use_sim_time': use_sim_time,
+                    'num_robots': num_robots_total, # 动态传递总数
+                }]
+            )
+        )
 
         if run_nav2:
             actions.append(
@@ -243,6 +259,7 @@ def _nav2_actions(context):
                     namespace=ns,
                     output='screen',
                     parameters=[{
+                        'enabled': False,
                         'use_sim_time': use_sim_time,
                         'map_topic': '/map',
                         'goal_frame': 'robot/map',
@@ -266,6 +283,8 @@ def _nav2_actions(context):
                         'clearance_min_start': 1.2,
                         'clearance_min_m': 0.9,
                         'clearance_penalty': 20.0,
+                        # Add for Voronoi:
+                        'swarm_robots': robots, 
                     }],
                 )
             )
@@ -485,7 +504,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     declare_world = DeclareLaunchArgument(
         'world',
-        default_value='playfield_swarm.sdf',
+        default_value='playfield_competition.sdf', 
         description='World file (SDF) under tof_slam_sim/worlds.',
     )
     declare_num_robots = DeclareLaunchArgument(

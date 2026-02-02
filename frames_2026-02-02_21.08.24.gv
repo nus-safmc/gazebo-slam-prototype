@@ -1,0 +1,37 @@
+digraph G {
+"robot6/odom" -> "robot6/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot6/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot4/odom" -> "robot4/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot4/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot7/odom" -> "robot7/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot7/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot9/odom" -> "robot9/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot9/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot10/odom" -> "robot10/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot10/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot/odom" -> "robot/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot2/odom" -> "robot2/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot2/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot3/odom" -> "robot3/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot3/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot5/odom" -> "robot5/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot5/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot8/odom" -> "robot8/base_footprint"[label=" Broadcaster: default_authority\nAverage rate: 51.471\nBuffer length: 0.68\nMost recent transform: 15.5\nOldest transform: 14.82\n"];
+"robot/map" -> "robot8/odom"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot/base_footprint" -> "robot/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot2/base_footprint" -> "robot2/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot3/base_footprint" -> "robot3/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot4/base_footprint" -> "robot4/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot5/base_footprint" -> "robot5/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot6/base_footprint" -> "robot6/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot7/base_footprint" -> "robot7/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot8/base_footprint" -> "robot8/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot9/base_footprint" -> "robot9/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot10/base_footprint" -> "robot10/base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+"robot/base_link" -> "base_link"[label=" Broadcaster: default_authority\nAverage rate: 10000.0\nBuffer length: 0.0\nMost recent transform: 0.0\nOldest transform: 0.0\n"];
+edge [style=invis];
+ subgraph cluster_legend { style=bold; color=black; label ="view_frames Result";
+"Recorded at time: 1770037704.896874"[ shape=plaintext ] ;
+}->"robot/map";
+}
