@@ -17,9 +17,6 @@ ament_python_install_package(${PROJECT_NAME})
 
 # Install Python executables
 install(PROGRAMS
-  src/tof8x8_to_scan.py
-  src/scan_merger.py
-  src/test_controller.py
   src/tof_to_scan.py
   src/pose_to_tf.py
   DESTINATION lib/${PROJECT_NAME}

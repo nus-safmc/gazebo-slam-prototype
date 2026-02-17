@@ -18,7 +18,6 @@ setup(
             'auto_pilot  = tof_slam_sim.auto_pilot_node:main',
             'map_tf_fallback = tof_slam_sim.map_tf_fallback:main',
             'topic_monitor = tof_slam_sim.topic_monitor:main',
-            'nav2_frontier_explorer_voronoi = tof_slam_sim.nav2_frontier_explorer_voronoi:main',
         ],
     },
 )

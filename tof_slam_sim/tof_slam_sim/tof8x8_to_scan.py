@@ -3,7 +3,7 @@
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
-from sensor_msgs.msg import Image, CameraInfo, LaserScan
+from sensor_msgs.msg import Image, LaserScan
 from cv_bridge import CvBridge
 import numpy as np
 import math
