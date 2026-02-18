@@ -25,10 +25,14 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     declare_num_robots = DeclareLaunchArgument(
-        'num_robots', default_value='5',
+        'num_robots', default_value='8',
     )
     declare_dashboard = DeclareLaunchArgument(
         'dashboard', default_value='true',
+    )
+    declare_rviz = DeclareLaunchArgument(
+        'rviz', default_value='false',
+        description='Launch RViz to visualize the merged map.',
     )
 
     sim_launch = IncludeLaunchDescription(
@@ -41,12 +45,12 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'num_robots': LaunchConfiguration('num_robots'),
-            'world': 'playfield_swarm.sdf',
+            'world': 'playfield_competition.sdf',
             'default_spawn': 'true',
             'run_nav2': 'true',
             'run_explorer': 'false',
             'run_autopilot': 'false',
-            'rviz': 'false',
+            'rviz': LaunchConfiguration('rviz'),
             'health_ui': 'false',
             'publish_drone_markers': 'false',
         }.items(),
@@ -70,6 +74,7 @@ def generate_launch_description():
     return LaunchDescription([
         declare_num_robots,
         declare_dashboard,
+        declare_rviz,
         sim_launch,
         delayed_swarm,
     ])

@@ -100,6 +100,7 @@ class SwarmMapFuser(Node):
         self.declare_parameter('free_threshold', -2)
         self.declare_parameter('occ_threshold', 6)
         self.declare_parameter('max_range_override', 0.0)
+        self.declare_parameter('no_hit_free_fraction', 0.3)
 
         self.map_frame = str(self.get_parameter('map_frame').value)
         self.map_topic = str(self.get_parameter('map_topic').value)
@@ -155,6 +156,11 @@ class SwarmMapFuser(Node):
         self._free_thresh = int(self.get_parameter('free_threshold').value)
         self._occ_thresh = int(self.get_parameter('occ_threshold').value)
         self._max_range_override = float(self.get_parameter('max_range_override').value)
+        self._no_hit_free_frac = float(self.get_parameter('no_hit_free_fraction').value)
+        if self._no_hit_free_frac < 0.0:
+            self._no_hit_free_frac = 0.0
+        elif self._no_hit_free_frac > 1.0:
+            self._no_hit_free_frac = 1.0
 
         size = self._spec.width * self._spec.height
         self._log_odds = array('h', [0]) * size
@@ -207,7 +213,9 @@ class SwarmMapFuser(Node):
 
         self.get_logger().info(
             f'Global map fuser online: frame={self.map_frame} grid={width}x{height} '
-            f'res={res:.3f}m scans={len(scan_topics)} robots={robots}'
+            f'res={res:.3f}m scans={len(scan_topics)} robots={robots} '
+            f'occ_update={self._occ_update} free_update={self._free_update} '
+            f'no_hit_free_frac={self._no_hit_free_frac:.2f}'
         )
 
     def _seed_keepout(self, *, margin_m: float) -> None:
@@ -363,8 +371,12 @@ class SwarmMapFuser(Node):
                     hit = False
                 else:
                     r_use = min(r_in, max_range)
-                    # Treat "max range" returns as no-hit.
                     hit = r_use < max_range * 0.995
+
+                # For no-hit beams, shorten the free-space raytrace to avoid
+                # multi-robot cross-fire erasing walls detected by other robots.
+                if not hit and self._no_hit_free_frac < 1.0:
+                    r_use = r_use * self._no_hit_free_frac
 
                 # Clip to map bounds along the ray.
                 exit_dist = self._ray_exit_distance(ox, oy, dx, dy)

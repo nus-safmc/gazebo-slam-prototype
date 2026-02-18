@@ -37,7 +37,7 @@ class MissionSupervisor(Node):
 
         self.declare_parameter('mission_state_topic', '/swarm/mission_state')
         self.declare_parameter('drone_states_topic', '/swarm/drone_states')
-        self.declare_parameter('expected_drones', ['robot', 'robot2', 'robot3', 'robot4', 'robot5'])
+        self.declare_parameter('expected_drones', ['robot', 'robot2', 'robot3', 'robot4', 'robot5', 'robot6', 'robot7', 'robot8'])
         self.declare_parameter('takeoff_window_duration_sec', 30.0)
         self.declare_parameter('auto_start_mission', True)
 

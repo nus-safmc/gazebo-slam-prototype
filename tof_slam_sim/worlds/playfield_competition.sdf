@@ -96,7 +96,14 @@
       <visual name="bv"><pose>0 0 0.075 0 0 0</pose><geometry><cylinder><radius>0.25</radius><length>0.15</length></cylinder></geometry><material><ambient>0.3 0.3 0.3 1</ambient><diffuse>0.3 0.3 0.3 1</diffuse></material></visual>
     </link></model> -->
 
-    <include><uri>model://rex_quadcopter</uri><name>robot</name><pose>-8 -8 0.05 0 0 0</pose></include>
-    <include><uri>model://rex_quadcopter_2</uri><name>robot2</name><pose>-4 -8 0.05 0 0 0</pose></include>
+    <!-- 8 drones spread across the start area (y = -8 to -5) -->
+    <include><uri>model://rex_quadcopter</uri><name>robot</name><pose>0.0 -8.0 0.05 0 0 0</pose></include>
+    <include><uri>model://rex_quadcopter_2</uri><name>robot2</name><pose>-4.0 -8.0 0.05 0 0 0.39</pose></include>
+    <include><uri>model://rex_quadcopter_3</uri><name>robot3</name><pose>4.0 -8.0 0.05 0 0 -0.39</pose></include>
+    <include><uri>model://rex_quadcopter_4</uri><name>robot4</name><pose>-7.0 -6.0 0.05 0 0 0.79</pose></include>
+    <include><uri>model://rex_quadcopter_5</uri><name>robot5</name><pose>7.0 -6.0 0.05 0 0 -0.79</pose></include>
+    <include><uri>model://rex_quadcopter_6</uri><name>robot6</name><pose>-2.0 -6.0 0.05 0 0 0.39</pose></include>
+    <include><uri>model://rex_quadcopter_7</uri><name>robot7</name><pose>2.0 -6.0 0.05 0 0 -0.39</pose></include>
+    <include><uri>model://rex_quadcopter_8</uri><name>robot8</name><pose>0.0 -5.0 0.05 0 0 0</pose></include>
   </world>
 </sdf>

@@ -13,7 +13,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     num_drones_arg = DeclareLaunchArgument(
         'num_drones',
-        default_value='5',
+        default_value='8',
         description='Number of drones to control',
     )
     dashboard_arg = DeclareLaunchArgument(
@@ -41,7 +41,7 @@ def generate_launch_description():
         executable='mission_supervisor',
         name='mission_supervisor',
         parameters=[{
-            'expected_drones': ['robot', 'robot2', 'robot3', 'robot4', 'robot5'],
+            'expected_drones': ['robot', 'robot2', 'robot3', 'robot4', 'robot5', 'robot6', 'robot7', 'robot8'],
         }],
         output='screen',
     )
@@ -63,7 +63,7 @@ def generate_launch_description():
 
     # Per-robot drone executors
     drone_executors = []
-    robot_names = ['robot', 'robot2', 'robot3', 'robot4', 'robot5']
+    robot_names = ['robot', 'robot2', 'robot3', 'robot4', 'robot5', 'robot6', 'robot7', 'robot8']
     for robot_name in robot_names:
         namespace = '' if robot_name == 'robot' else robot_name
         drone_executors.append(Node(
