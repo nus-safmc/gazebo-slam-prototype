@@ -2,7 +2,7 @@
 <sdf version="1.9">
   <!-- Keep world name as "playfield" to match existing bridge topic names. -->
   <world name="playfield">
-    <!-- Use a larger timestep to keep the sim realtime with 4 robots + 32 lidars. -->
+    <!-- Use a larger timestep to keep the sim realtime with 5 robots + 40 sensors. -->
     <physics name="4ms" type="ignored">
       <max_step_size>0.004</max_step_size>
       <real_time_factor>1.0</real_time_factor>
@@ -857,29 +857,35 @@
       </link>
     </model>
 
-    <!-- Robots: spread across the arena for breadth-first swarm mapping -->
+    <!-- Robots: 5 drones spread inside the (-9.4, 9.4) exploration area -->
     <include>
       <uri>model://rex_quadcopter</uri>
       <name>robot</name>
-      <pose>0 -7 0.05 0 0 0</pose>
+      <pose>0.0 0.0 0.05 0 0 0</pose>
     </include>
 
     <include>
       <uri>model://rex_quadcopter_2</uri>
       <name>robot2</name>
-      <pose>-6.5 5.4 0.05 0 0 1.5708</pose>
+      <pose>-6.0 -6.0 0.05 0 0 0.79</pose>
     </include>
 
     <include>
       <uri>model://rex_quadcopter_3</uri>
       <name>robot3</name>
-      <pose>7 7 0.05 0 0 3.1416</pose>
+      <pose>6.0 -6.0 0.05 0 0 2.36</pose>
     </include>
 
     <include>
       <uri>model://rex_quadcopter_4</uri>
       <name>robot4</name>
-      <pose>7 -7 0.05 0 0 -1.5708</pose>
+      <pose>-6.0 6.0 0.05 0 0 -0.79</pose>
+    </include>
+
+    <include>
+      <uri>model://rex_quadcopter_5</uri>
+      <name>robot5</name>
+      <pose>6.0 6.0 0.05 0 0 -2.36</pose>
     </include>
   </world>
 </sdf>

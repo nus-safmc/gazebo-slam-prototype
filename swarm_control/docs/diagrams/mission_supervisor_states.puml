@@ -1,0 +1,80 @@
+@startuml Mission Supervisor State Machine
+!theme cerulean
+
+title MissionSupervisor Global State Machine (5 Drones)
+
+[*] --> IDLE : System startup
+
+IDLE --> READY : All drones\nreport ready states
+IDLE --> READY : Auto-start\nafter 15 seconds
+IDLE --> IDLE : Waiting for drones...
+
+READY --> TAKEOFF_WINDOW_A : Immediate transition
+
+TAKEOFF_WINDOW_A --> TAKEOFF_WINDOW_B : Window A timeout (30s)\nor all group A staged
+TAKEOFF_WINDOW_A --> TAKEOFF_WINDOW_A : Managing window A...
+
+TAKEOFF_WINDOW_B --> RUNNING : Window B timeout (30s)\nor all group B staged
+TAKEOFF_WINDOW_B --> TAKEOFF_WINDOW_B : Managing window B...
+
+RUNNING --> RETURN_AND_LAND : Mission complete
+RUNNING --> ABORT : Emergency detected
+RUNNING --> RUNNING : Mission active...
+
+RETURN_AND_LAND --> COMPLETE : All drones landed
+RETURN_AND_LAND --> RETURN_AND_LAND : Landing drones...
+
+COMPLETE --> [*] : Mission finished
+
+' Abort transitions
+RUNNING --> ABORT : Any drone in EMERGENCY
+
+note right of IDLE
+    Waits for all expected drones
+    (robot, robot2..robot5)
+    Auto-starts after 15s
+end note
+
+note right of READY
+    All drones detected
+    Immediate transition
+    to takeoff
+end note
+
+note right of TAKEOFF_WINDOW_A : **Group A**
+    robot, robot2
+    30-second window
+    Advances early if
+    all drones staged
+end note
+
+note right of TAKEOFF_WINDOW_B : **Group B**
+    robot3, robot4, robot5
+    30-second window
+    Advances early if
+    all drones staged
+end note
+
+note right of RUNNING
+    Exploration phase
+    Monitors for emergencies
+    (any drone EMERGENCY -> ABORT)
+end note
+
+note right of RETURN_AND_LAND
+    Mission ending
+    Command all drones home
+end note
+
+note right of COMPLETE
+    All drones safely landed
+    Mission successful
+end note
+
+note right of ABORT
+    Mission failed
+    Triggered by drone
+    EMERGENCY state
+end note
+
+@enduml

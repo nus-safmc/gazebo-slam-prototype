@@ -1,0 +1,62 @@
+@startuml Data Flow Through Swarm System
+!theme cerulean
+
+title Data Flow and Message Types
+
+' Define participants
+participant "Gazebo\nSimulation" as gazebo #LightBlue
+participant "ROS 2\nTopics" as ros #LightGreen
+participant "Frontier\nServer" as fs #LightYellow
+participant "Goal\nAllocator" as ga #LightCoral
+participant "Mission\nSupervisor" as ms #LightCyan
+participant "Drone\nExecutor" as de #LightPink
+participant "Nav2\nStack" as nav2 #LightGray
+participant "Web\nDashboard" as dash #Wheat
+
+' Data flow from simulation
+gazebo -> ros : sensor_msgs/Image[]\nDepth images from 8 ToF sensors x5 robots
+gazebo -> ros : nav_msgs/Odometry[]\nRobot positions
+ros -> ros : nav_msgs/OccupancyGrid\nMerged global map via swarm_map_fuser
+
+' Frontier detection
+ros -> fs : nav_msgs/OccupancyGrid\nSubscribe /map
+fs -> ros : PoseStamped[]\nPublish /swarm/frontiers
+
+' Goal allocation
+ros -> ga : PoseStamped[]\nSubscribe /swarm/frontiers
+ros -> ga : String[]\nSubscribe /swarm/drone_states
+ga -> ros : String\nPublish /swarm/assignments\n(robot_id:frontier_id:cx:cy)
+
+' Mission supervision
+ros -> ms : String[]\nSubscribe /swarm/drone_states
+ms -> ros : String\nPublish /swarm/mission_state
+
+' Drone execution with Nav2
+ros -> de : String\nSubscribe /swarm/assignments
+de -> ros : String\nPublish /swarm/drone_states
+de -> nav2 : NavigateToPose.Goal\nSend navigation goals
+nav2 -> de : NavigateToPose.Result\nGoal completion feedback
+
+' Control commands back to simulation
+nav2 -> ros : geometry_msgs/Twist\n/cmd_vel commands
+ros -> gazebo : geometry_msgs/Twist\nVelocity control
+
+' Dashboard subscriptions
+ros -> dash : SSE stream\nAll /swarm/* topics
+dash -> dash : HTTP :5000\nBrowser renders
+
+== Key Data Structures ==
+
+note right
+    **Assignment Message:**
+    "robot_id:frontier_id:cx:cy"
+    e.g. "robot:f_042:5.200:3.800"
+end note
+
+note right
+    **Drone State Message:**
+    "robot:AVAILABLE:1.2,3.4,0.5:f_042"
+    robot:state:x,y,yaw:assignment
+end note
+
+@enduml

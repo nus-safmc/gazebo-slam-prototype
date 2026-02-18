@@ -1,0 +1,93 @@
+@startuml Swarm Control Architecture
+!theme cerulean
+
+title Swarm Control System Architecture (5 Drones)
+
+package "Gazebo Simulation" as gazebo #LightBlue {
+    rectangle "World\n(playfield_swarm.sdf)" as world
+    rectangle "Robot 1" as robot1
+    rectangle "Robot 2" as robot2
+    rectangle "Robot 3" as robot3
+    rectangle "Robot 4" as robot4
+    rectangle "Robot 5" as robot5
+
+    world --> robot1 : spawns (0,0)
+    world --> robot2 : spawns (-6,-6)
+    world --> robot3 : spawns (6,-6)
+    world --> robot4 : spawns (-6,6)
+    world --> robot5 : spawns (6,6)
+}
+
+package "ROS 2 Middleware" as ros #LightGreen {
+    rectangle "/scan_merged (×5)" as scans
+    rectangle "/map (global)" as map
+    rectangle "/cmd_vel (×5)" as cmds
+    rectangle "TF Tree" as tf
+}
+
+package "Swarm Control System" as swarm #LightYellow {
+    package "Central Nodes" as central {
+        rectangle "FrontierServer" as fs
+        rectangle "GoalAllocator" as ga
+        rectangle "MissionSupervisor" as ms
+        rectangle "TrafficManager" as tm
+        rectangle "SwarmDashboard\n(web :5000)" as dash
+    }
+
+    package "Per-Robot Nodes (×5)" as perrobot {
+        rectangle "DroneExecutor_1" as de1
+        rectangle "DroneExecutor_2" as de2
+        rectangle "DroneExecutor_3" as de3
+        rectangle "DroneExecutor_4" as de4
+        rectangle "DroneExecutor_5" as de5
+    }
+
+    package "Nav2 Stacks (×5)" as nav2pkg {
+        rectangle "Nav2_1..5" as nav2
+    }
+}
+
+' ROS data flow
+scans --> map : map fuser
+map --> fs : subscribes
+
+' Swarm control data flow
+fs --> ga : publishes frontiers
+ga --> de1 : assignments
+ga --> de2 : assignments
+ga --> de3 : assignments
+ga --> de4 : assignments
+ga --> de5 : assignments
+
+' Nav2 integration
+de1 --> nav2 : NavigateToPose
+de2 --> nav2 : NavigateToPose
+de3 --> nav2 : NavigateToPose
+de4 --> nav2 : NavigateToPose
+de5 --> nav2 : NavigateToPose
+
+nav2 --> cmds : velocity commands
+
+' Status reporting
+de1 --> ms : status
+de2 --> ms : status
+de3 --> ms : status
+de4 --> ms : status
+de5 --> ms : status
+
+' Dashboard subscribes to all swarm topics
+de1 --> dash : drone states
+fs --> dash : frontiers
+ga --> dash : assignments
+ms --> dash : mission state
+
+' TF connections
+tf --> fs : frame transforms
+tf --> de1 : frame transforms
+
+note right of fs : Detects frontiers\nfrom merged /map
+note right of ga : Greedy assignment\nrobot_id:frontier_id:cx:cy
+note right of ms : Takeoff windows\nA (robot,robot2)\nB (robot3,robot4,robot5)
+note right of dash : SSE live stream\nhttp://localhost:5000
+
+@enduml
