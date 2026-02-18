@@ -67,7 +67,7 @@ This documentation explains the centralized swarm control system for multi-robot
 - DroneExecutor: Individual robot control via Nav2 `NavigateToPose`
 - MissionSupervisor: Global coordination with takeoff windows
 - TrafficManager: Proximity monitoring
-- SwarmDashboard: Web UI on `http://localhost:5000`
+- SwarmDashboard: Web UI on `http://localhost:8080`
 
 ## File Organization
 

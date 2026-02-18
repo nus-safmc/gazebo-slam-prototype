@@ -41,6 +41,7 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'num_robots': LaunchConfiguration('num_robots'),
+            'world': 'playfield_swarm.sdf',
             'default_spawn': 'true',
             'run_nav2': 'true',
             'run_explorer': 'false',

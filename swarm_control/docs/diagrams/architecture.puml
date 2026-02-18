@@ -31,7 +31,7 @@ package "Swarm Control System" as swarm #LightYellow {
         rectangle "GoalAllocator" as ga
         rectangle "MissionSupervisor" as ms
         rectangle "TrafficManager" as tm
-        rectangle "SwarmDashboard\n(web :5000)" as dash
+        rectangle "SwarmDashboard\n(web :8080)" as dash
     }
 
     package "Per-Robot Nodes (×5)" as perrobot {
@@ -88,6 +88,6 @@ tf --> de1 : frame transforms
 note right of fs : Detects frontiers\nfrom merged /map
 note right of ga : Greedy assignment\nrobot_id:frontier_id:cx:cy
 note right of ms : Takeoff windows\nA (robot,robot2)\nB (robot3,robot4,robot5)
-note right of dash : SSE live stream\nhttp://localhost:5000
+note right of dash : SSE live stream\nhttp://localhost:8080
 
 @enduml

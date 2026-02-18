@@ -151,7 +151,7 @@ DroneExecutors cancel any active Nav2 goals when the node is destroyed (e.g., on
 The `swarm_dashboard` node runs both a ROS 2 subscriber and a Python stdlib HTTP server:
 
 - **ROS 2 side**: Subscribes to `/swarm/drone_states`, `/swarm/frontiers`, `/swarm/assignments`, `/swarm/mission_state`
-- **HTTP side**: Serves a single-page HTML dashboard with embedded CSS/JS on port 5000
+- **HTTP side**: Serves a single-page HTML dashboard with embedded CSS/JS on port 8080
 - **SSE endpoint** (`/api/stream`): Pushes JSON state every 500ms to the browser
 - **REST endpoint** (`/api/state`): One-shot JSON polling
 

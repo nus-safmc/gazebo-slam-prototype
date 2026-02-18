@@ -125,12 +125,12 @@ ros2 topic echo /swarm/drone_states
 ### "Dashboard not loading"
 
 **Symptoms:**
-- `http://localhost:5000` returns connection refused
+- `http://localhost:8080` returns connection refused
 - No dashboard page in browser
 
 **Possible Causes:**
 1. **Dashboard node not running** -- check launch argument `dashboard:=true`
-2. **Port 5000 in use** -- another process using the port
+2. **Port 8080 in use** -- another process using the port
 3. **Node crashed** -- check logs
 
 **Solutions:**
@@ -138,8 +138,8 @@ ros2 topic echo /swarm/drone_states
 # Check dashboard node is running
 ros2 node list | grep dashboard
 
-# Check if port 5000 is in use
-lsof -i :5000
+# Check if port 8080 is in use
+lsof -i :8080
 
 # Check node logs for errors
 # (visible in launch terminal output)

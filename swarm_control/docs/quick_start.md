@@ -31,7 +31,7 @@ This starts:
 
 ## Step 3: Open the Web Dashboard
 
-Navigate to **http://localhost:5000** in your browser.
+Navigate to **http://localhost:8080** in your browser.
 
 The dashboard shows:
 - **Header bar**: Mission state, uptime, total goals assigned/reached
@@ -92,7 +92,7 @@ pixi run -e jazzy ros2 topic echo /swarm/mission_state
 - Check Nav2 nodes: `ros2 node list | grep controller_server`
 
 ### "Dashboard not loading"
-- Check port 5000 is not in use
+- Check port 8080 is not in use
 - Look for `swarm_dashboard` in `ros2 node list`
 
 ### "Robots not moving"

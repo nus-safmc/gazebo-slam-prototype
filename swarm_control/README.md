@@ -11,7 +11,7 @@ This package implements a centralized swarm control architecture for coordinated
 - **DroneExecutor**: Per-drone FSM with Nav2 `NavigateToPose` integration
 - **MissionSupervisor**: Global mission orchestration with takeoff windows
 - **TrafficManager**: Proximity monitoring and collision avoidance
-- **SwarmDashboard**: Web-based live dashboard on `http://localhost:5000`
+- **SwarmDashboard**: Web-based live dashboard on `http://localhost:8080`
 
 ## Architecture
 
@@ -26,7 +26,7 @@ This package implements a centralized swarm control architecture for coordinated
          ▼                       ▼                       ▼
 ┌─────────────────┐    ┌──────────────────┐    ┌──────────────────┐
 │  TrafficManager │    │  DroneExecutor   │    │  SwarmDashboard  │
-│                 │    │  (×5, per drone) │    │  (web UI :5000)  │
+│                 │    │  (×5, per drone) │    │  (web UI :8080)  │
 │ • Proximity warn│    │ • FSM: BOOT→AVAIL│    │ • SSE live feed  │
 │ • Collision log │    │ • Nav2 goals     │    │ • Drone states   │
 └─────────────────┘    └──────────────────┘    └──────────────────┘
@@ -52,7 +52,7 @@ pixi run -e jazzy ros2 launch swarm_control test_swarm.launch.py
 ```
 
 ### 3. Open the Dashboard
-Navigate to **http://localhost:5000** in your browser to see:
+Navigate to **http://localhost:8080** in your browser to see:
 - Mission state and uptime
 - Per-drone FSM states and positions
 - Frontier counts and details
@@ -148,7 +148,7 @@ Swarm control nodes only (requires simulation infrastructure separately):
 1. **No frontiers detected**: Check `/map` topic is publishing
 2. **No assignments**: Ensure drones report `AVAILABLE` state
 3. **Navigation failures**: Verify TF transforms are working
-4. **Dashboard not loading**: Check port 5000 is free; look for node logs
+4. **Dashboard not loading**: Check port 8080 is free; look for node logs
 
 ### Debug Commands
 ```bash

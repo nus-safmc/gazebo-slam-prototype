@@ -9,7 +9,7 @@ Multiple drones (robots) explore an unknown area together. The **centralized** a
 - One frontier scan finds all exploration opportunities from the merged map
 - Smart assignment of goals to drones via a greedy scoring algorithm
 - Per-drone FSMs execute goals through Nav2 `NavigateToPose`
-- A live web dashboard at `http://localhost:5000` monitors everything in real time
+- A live web dashboard at `http://localhost:8080` monitors everything in real time
 
 ## Key Concepts
 
@@ -52,7 +52,7 @@ A frontier is the boundary between explored (known) and unexplored (unknown) are
 │  Central: FrontierServer, GoalAllocator,                   │
 │           MissionSupervisor, TrafficManager                │
 │  Per-robot: DroneExecutor (×5) → Nav2 NavigateToPose       │
-│  Dashboard: SwarmDashboard (web UI on :5000)               │
+│  Dashboard: SwarmDashboard (web UI on :8080)               │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -99,7 +99,7 @@ pixi run -e jazzy build
 pixi run -e jazzy ros2 launch swarm_control test_swarm.launch.py
 
 # 3. Open the web dashboard
-# Navigate to http://localhost:5000
+# Navigate to http://localhost:8080
 
 # 4. Watch topics in separate terminals
 pixi run -e jazzy ros2 topic echo /swarm/frontiers

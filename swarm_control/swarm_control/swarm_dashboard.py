@@ -2,7 +2,7 @@
 """
 Swarm Control Web Dashboard
 
-ROS 2 node that serves a live web dashboard on http://localhost:5000.
+ROS 2 node that serves a live web dashboard on http://localhost:8080.
 Uses Python stdlib http.server + Server-Sent Events (SSE) for real-time
 push -- no external dependencies required.
 """
@@ -99,7 +99,7 @@ class DashboardNode(Node):
             QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=1),
         )
         self.create_timer(0.5, self._push)
-        self.get_logger().info('Dashboard node started – http://localhost:5000')
+        self.get_logger().info('Dashboard node started – http://localhost:8080')
 
     def _ts(self) -> str:
         return time.strftime('%H:%M:%S')
@@ -374,16 +374,21 @@ def main(args=None):
     rclpy.init(args=args)
     node = DashboardNode()
 
+    node.declare_parameter('host', '0.0.0.0')
+    node.declare_parameter('port', 8080)
+    host = node.get_parameter('host').value
+    port = node.get_parameter('port').value
+
     executor = SingleThreadedExecutor()
     executor.add_node(node)
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
 
-    server = HTTPServer(('0.0.0.0', 5000), _Handler)
+    server = HTTPServer((host, port), _Handler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 
-    node.get_logger().info('Web dashboard serving on http://localhost:5000')
+    node.get_logger().info(f'Web dashboard serving on http://localhost:{port}')
 
     try:
         spin_thread.join()

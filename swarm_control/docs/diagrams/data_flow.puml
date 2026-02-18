@@ -43,7 +43,7 @@ ros -> gazebo : geometry_msgs/Twist\nVelocity control
 
 ' Dashboard subscriptions
 ros -> dash : SSE stream\nAll /swarm/* topics
-dash -> dash : HTTP :5000\nBrowser renders
+dash -> dash : HTTP :8080\nBrowser renders
 
 == Key Data Structures ==
 

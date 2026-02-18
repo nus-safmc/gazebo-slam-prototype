@@ -19,7 +19,7 @@ def generate_launch_description():
     dashboard_arg = DeclareLaunchArgument(
         'dashboard',
         default_value='true',
-        description='Launch the web dashboard on http://localhost:5000',
+        description='Launch the web dashboard on http://localhost:8080',
     )
 
     frontier_server = Node(
