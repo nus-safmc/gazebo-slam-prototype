@@ -63,7 +63,7 @@ controller_server:
       max_vel_y: 0.5
       max_vel_theta: 0.9
       min_speed_xy: 0.0
-      max_speed_xy: 0.5
+      max_speed_xy: 0.8
       min_speed_theta: 0.0
 
       # Accel limits
@@ -141,7 +141,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 2.5
-        inflation_radius: 0.4
+        inflation_radius: 0.35
       always_send_full_costmap: True
 
 global_costmap:

@@ -94,10 +94,11 @@ class SwarmMissionManager(Node):
         # ENHANCED DEPTH: Push center drones much further north
         dist_from_center = abs(x0)
         # Increase the multiplier from 8.0 to 12.0 or 14.0
-        depth_offset = max(1.0, 14.0 * (1.0 - (dist_from_center / 9.5)))
+        # depth_offset = max(1.0, 14.0 * (1.0 - (dist_from_center / 9.5)))
+        
         
         # Starting from -4.0, a center drone will now try to reach Y = +10.0
-        ty = -4.0 + depth_offset 
+        ty = 9.0
 
         return tx, ty
 
@@ -144,7 +145,7 @@ class SwarmMissionManager(Node):
         x0 = self.get_my_spawn_x() or (-8.5 + (self.robot_id - 1) * (1.2))
         
         # Lane restriction: each drone gets a 1.5m wide segment
-        lane_width = 1.5 
+        lane_width = 2.5
         my_min_x = x0 - (lane_width / 2.0)
         my_max_x = x0 + (lane_width / 2.0)
 

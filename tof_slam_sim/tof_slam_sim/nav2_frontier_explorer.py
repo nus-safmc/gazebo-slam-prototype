@@ -24,6 +24,7 @@ from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from tf2_ros import Buffer, TransformException, TransformListener
 from rcl_interfaces.msg import SetParametersResult
+from visualization_msgs.msg import Marker, MarkerArray
 
 
 def _yaw_from_quat(x: float, y: float, z: float, w: float) -> float:
@@ -178,6 +179,8 @@ class Nav2FrontierExplorer(Node):
         self.enabled = self.declare_parameter('enabled', False) #only enabled after the beginning spreadout
 
         self.add_on_set_parameters_callback(self._on_set_param_cb)
+        
+        self.marker_pub = self.create_publisher(MarkerArray, 'detected_frontiers', 10)
 
     # ------------------------------------------------------------------
     # ROS callbacks / helpers
@@ -209,7 +212,40 @@ class Nav2FrontierExplorer(Node):
         q = tf.transform.rotation
         yaw = _yaw_from_quat(q.x, q.y, q.z, q.w)
         return x, y, yaw
+    
+    def publish_markers(self, clusters, meta, neighbor_poses, robot_x, robot_y):
+        marker_array = MarkerArray()
+        
+        for i, cluster in enumerate(clusters):
+            sx, sy = 0.0, 0.0
+            for c in cluster:
+                sx += c % meta.width
+                sy += c // meta.width
+            cx, cy = sx / len(cluster), sy / len(cluster)
+            cx_w, cy_w = meta.cell_to_world(int(cx), int(cy))
+            marker = Marker()
+            marker.header.frame_id = "map" 
+            marker.header.stamp = self.get_clock().now().to_msg()
+            marker.ns = "frontier_clusters"
+            marker.id = i
+            marker.type = Marker.CYLINDER
+            marker.action = Marker.ADD
+            marker.pose.position.x = cx_w
+            marker.pose.position.y = cy_w
+            marker.scale.x, marker.scale.y, marker.scale.z = 0.3, 0.3, 0.1
 
+            marker.color.r, marker.color.g, marker.color.b, marker.color.a = 0.0, 1.0, 0.0, 0.8
+            
+            if len(cluster) * meta.res < self.min_frontier_size: 
+                marker.color.r, marker.color.g, marker.color.b = 1.0, 1.0, 0.0 
+            
+            dist_to_me = math.hypot(cx_w - robot_x, cy_w - robot_y)
+            if any(math.hypot(cx_w - nx, cy_w - ny) < dist_to_me for nx, ny in neighbor_poses):
+                marker.color.r, marker.color.g, marker.color.b = 0.0, 0.0, 1.0 
+
+            marker_array.markers.append(marker)
+        
+        self.marker_pub.publish(marker_array)
     # ------------------------------------------------------------------
     # Frontier selection
     # ------------------------------------------------------------------
@@ -564,11 +600,21 @@ class Nav2FrontierExplorer(Node):
                 self.get_logger().info(
                     f"Voronoi Filter: {rejected_count}/{total_clusters} clusters assigned to neighbors."
                 )
+
+            if best_goal is None and clusters:
+                first_c = clusters[0][0]
+                best_goal = meta.cell_to_world(first_c % meta.width, first_c // meta.width)
+                self.get_logger().error(f"[{self.robot_name}] ALL FILTERS FAILED. Forcing goal to first cluster.")
             return best_goal
-       
+        self.publish_markers(clusters, meta, neighbor_poses, robot_x, robot_y)
         goal = _pick_goal(min_frontier_m, min_goal_dist_m, clearance_min_m, use_voronoi=True)
+        
         if self.breadth_first and goal is None and (min_frontier_m > 0.0 or min_goal_dist_m > 0.0):
             goal = _pick_goal(0.0, 0.0, self.clearance_min_m, use_voronoi=False)
+        if goal is None:
+            self.get_logger().warn(f'[{self.robot_name}] No large clusters found. Switching to desperate search.')
+            goal = _pick_goal(0.0, 0.0, 0.0, use_voronoi=False) 
+
         return goal
 
     # ------------------------------------------------------------------
@@ -735,19 +781,23 @@ class Nav2FrontierExplorer(Node):
         goal = self._find_frontier_goal(self._map, (rx, ry))
 
         if goal is None:
-            # 1. Log the exhaustion
-            self.get_logger().warn(f'[{self.robot_name}] Lane exhausted. Expanding search bounds...')
+            # self.get_logger().warn(f'[{self.robot_name}] No frontier found in current lane.')
+            # target_depth = 0.5 
+            # if ry < target_depth:
+            #     self.get_logger().error(f'[{self.robot_name}] No frontiers detected. Pushing forward to depth...')
+            #     side_push = 1.5 if self.robot_id > (self.total_robots / 2) else -1.5
+            #     goal = (rx + side_push, ry + 1.0) 
             
-            # 2. Dynamically expand the X limits by 1.5 meters
-            current_min_x = self.get_parameter('arena_min_x').value
-            current_max_x = self.get_parameter('arena_max_x').value
-            
-            # Update parameters to look at neighboring lanes
-            # This triggers the callback you added earlier
-            self.set_parameters([
-                rclpy.parameter.Parameter('arena_min_x', rclpy.Parameter.Type.DOUBLE, current_min_x - 2.0),
-                rclpy.parameter.Parameter('arena_max_x', rclpy.Parameter.Type.DOUBLE, current_max_x + 2.0)
-            ])
+            # else:
+                self.get_logger().warn(f'[{self.robot_name}] Lane exhausted at Y={ry:.1f}. Expanding search bounds...')
+                current_min_x = self.get_parameter('arena_min_x').value
+                current_max_x = self.get_parameter('arena_max_x').value
+                
+                self.set_parameters([
+                    rclpy.parameter.Parameter('arena_min_x', rclpy.Parameter.Type.DOUBLE, current_min_x - 2.0),
+                    rclpy.parameter.Parameter('arena_max_x', rclpy.Parameter.Type.DOUBLE, current_max_x + 2.0)
+                ])
+                return
 
         gx, gy = goal
         yaw = math.atan2(gy - ry, gx - rx)
