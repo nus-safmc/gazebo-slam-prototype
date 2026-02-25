@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# PX4 uXRCE-DDS endpoints are not reliably discovered via CycloneDDS in this stack.
-# Force FastDDS for all PX4 runs.
-export RMW_IMPLEMENTATION="rmw_fastrtps_cpp"
-unset CYCLONEDDS_URI
+# Keep the pixi-env default DDS (CycloneDDS).  FastDDS hangs in RoboStack
+# environments.  PX4 uXRCE-DDS topics are still discoverable via standard
+# DDS interop even when the ROS side uses CycloneDDS.
 
 ARGS=()
 while [[ $# -gt 0 ]]; do
@@ -16,7 +15,8 @@ while [[ $# -gt 0 ]]; do
   ARGS+=("$a")
 done
 
-bash "$(dirname "$0")/cleanup_sim.sh"
-bash "$(dirname "$0")/check_microxrce_agent.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+bash "$SCRIPT_DIR/../core/cleanup_sim.sh"
+bash "$SCRIPT_DIR/check_microxrce_agent.sh"
 
-exec ros2 launch tof_slam_sim px4_sitl.launch.py "${ARGS[@]}"
+exec ros2 launch tof_slam_sim px4_sitl.launch.py ${ARGS[@]+"${ARGS[@]}"}

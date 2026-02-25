@@ -47,7 +47,8 @@ while [[ $# -gt 0 ]]; do
   ARGS+=("$a")
 done
 
-bash "$(dirname "$0")/cleanup_sim.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+bash "$SCRIPT_DIR/../core/cleanup_sim.sh"
 
 ROBOTS_ARG=()
 if [[ -n "$ROBOTS_CSV" ]]; then
@@ -69,7 +70,7 @@ elif [[ -n "$N_ROBOTS" ]]; then
 fi
 
 if [[ "$DEFAULT_SPAWN" -eq 1 ]]; then
-  exec ros2 launch tof_slam_sim swarm_fast.launch.py default_spawn:=true "${ROBOTS_ARG[@]}" "${ARGS[@]}"
+  exec ros2 launch tof_slam_sim swarm_fast.launch.py default_spawn:=true ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} ${ARGS[@]+"${ARGS[@]}"}
 else
-  exec ros2 launch tof_slam_sim swarm_fast.launch.py default_spawn:=false "${ROBOTS_ARG[@]}" "${ARGS[@]}"
+  exec ros2 launch tof_slam_sim swarm_fast.launch.py default_spawn:=false ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} ${ARGS[@]+"${ARGS[@]}"}
 fi

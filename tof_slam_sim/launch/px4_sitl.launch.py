@@ -169,10 +169,12 @@ def generate_launch_description() -> LaunchDescription:
             'make',
             'px4_sitl',
             'gz_x500_small_tof',
-            'CMAKE_ARGS=-DCONFIG_WARN_AS_ERROR=n',
         ],
         cwd=px4_dir,
         output='screen',
+        additional_env={
+            'CXXFLAGS': '-Wno-error=vla-cxx-extension -Wno-error=unused-but-set-variable -Wno-error=double-promotion',
+        },
         condition=IfCondition(LaunchConfiguration('run_px4')),
     )
 

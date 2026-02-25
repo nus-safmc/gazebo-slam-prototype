@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# PX4 uXRCE-DDS endpoints are not reliably discovered via CycloneDDS in this stack.
-# Force FastDDS for all PX4 runs.
-export RMW_IMPLEMENTATION="rmw_fastrtps_cpp"
-unset CYCLONEDDS_URI
+# Keep the pixi-env default DDS (CycloneDDS).  FastDDS hangs in RoboStack
+# environments.  PX4 uXRCE-DDS topics are still discoverable via standard
+# DDS interop even when the ROS side uses CycloneDDS.
 
 DEFAULT_SPAWN=0
 N_ROBOTS=""
@@ -43,8 +42,9 @@ while [[ $# -gt 0 ]]; do
   ARGS+=("$a")
 done
 
-bash "$(dirname "$0")/cleanup_sim.sh"
-bash "$(dirname "$0")/check_microxrce_agent.sh"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+bash "$SCRIPT_DIR/../core/cleanup_sim.sh"
+bash "$SCRIPT_DIR/../px4/check_microxrce_agent.sh"
 
 ROBOTS_ARG=()
 if [[ -n "$ROBOTS_CSV" ]]; then
@@ -66,7 +66,7 @@ elif [[ -n "$N_ROBOTS" ]]; then
 fi
 
 if [[ "$DEFAULT_SPAWN" -eq 1 ]]; then
-  exec ros2 launch tof_slam_sim px4_swarm_fast.launch.py default_spawn:=true "${ROBOTS_ARG[@]}" "${ARGS[@]}"
+  exec ros2 launch tof_slam_sim px4_swarm_fast.launch.py default_spawn:=true ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} ${ARGS[@]+"${ARGS[@]}"}
 else
-  exec ros2 launch tof_slam_sim px4_swarm_fast.launch.py default_spawn:=false "${ROBOTS_ARG[@]}" "${ARGS[@]}"
+  exec ros2 launch tof_slam_sim px4_swarm_fast.launch.py default_spawn:=false ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} ${ARGS[@]+"${ARGS[@]}"}
 fi

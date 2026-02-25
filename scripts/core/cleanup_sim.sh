@@ -26,6 +26,10 @@ pkill -f '[p]arameter_bridge.*ros_gz_bridge' 2>/dev/null || true
 pkill -f '/depth/tof_1@sensor_msgs/msg/Image@gz\.msgs\.Image' 2>/dev/null || true
 pkill -f '/model/x500_small_tof_0/pose@geometry_msgs/msg/PoseStamped@gz\.msgs\.Pose' 2>/dev/null || true
 
+# PX4 SITL binary instances (can leave lock files that block the next run).
+pkill -f '[b]in/px4 -i' 2>/dev/null || true
+pkill -f 'px4_sitl_default/bin/px4' 2>/dev/null || true
+
 # PX4 uXRCE agent (safe to stop when resetting sim state)
 pkill -f '[M]icroXRCEAgent udp4 -p 8888' 2>/dev/null || true
 
