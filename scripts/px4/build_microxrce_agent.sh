@@ -35,11 +35,33 @@ if [[ ! -d "${SRC_DIR}/.git" ]]; then
   git clone --depth 1 "${REPO_URL}" "${SRC_DIR}"
 fi
 
+OS="$(uname -s)"
+NJOBS=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+CMAKE_EXTRA_ARGS=()
+case "${OS}" in
+  Darwin)
+    # Conda cross-compiler doesn't expose CMAKE_SYSTEM_NAME, so cmake
+    # can't auto-disable the Linux-only CAN transport.  Set both explicitly.
+    CMAKE_EXTRA_ARGS+=(
+      -DCMAKE_SYSTEM_NAME=Darwin
+      -DUAGENT_SOCKETCAN_PROFILE=OFF
+    )
+    ;;
+  Linux)
+    CMAKE_EXTRA_ARGS+=( -DCMAKE_SYSTEM_NAME=Linux )
+    ;;
+esac
+
+echo "[px4]   os:    ${OS}"
+echo "[px4]   jobs:  ${NJOBS}"
+
 cmake -S "${SRC_DIR}" -B "${BUILD_DIR}" \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_INSTALL_PREFIX="${CONDA_PREFIX}"
+  -DCMAKE_INSTALL_PREFIX="${CONDA_PREFIX}" \
+  "${CMAKE_EXTRA_ARGS[@]}"
 
-cmake --build "${BUILD_DIR}" -j"$(nproc)"
+cmake --build "${BUILD_DIR}" -j"${NJOBS}"
 cmake --install "${BUILD_DIR}"
 
 if command -v MicroXRCEAgent >/dev/null 2>&1; then
