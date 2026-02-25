@@ -96,6 +96,8 @@ class TwistToPX4Offboard(Node):
         super().__init__('twist_to_px4_offboard')
 
         self.declare_parameter('cmd_vel_topic', '/cmd_vel')
+        self.declare_parameter('max_linear_vel_mps', 0.25)
+        self.declare_parameter('max_angular_vel_rad_s', 0.7)
         self.declare_parameter('vehicle_odometry_topic', '/fmu/out/vehicle_odometry')
         self.declare_parameter('vehicle_local_position_topic', '/fmu/out/vehicle_local_position')
         self.declare_parameter('publish_rate_hz', 20.0)
@@ -127,6 +129,8 @@ class TwistToPX4Offboard(Node):
         self.declare_parameter('px4_source_component', 1)
 
         self._cmd_vel_topic = str(self.get_parameter('cmd_vel_topic').value).strip() or '/cmd_vel'
+        self._max_linear_vel = float(self.get_parameter('max_linear_vel_mps').value)
+        self._max_angular_vel = float(self.get_parameter('max_angular_vel_rad_s').value)
         self._vehicle_odom_topic = (
             str(self.get_parameter('vehicle_odometry_topic').value).strip()
             or '/fmu/out/vehicle_odometry'
@@ -477,9 +481,11 @@ class TwistToPX4Offboard(Node):
         cmd = self._latest_cmd_vel(now_ns)
         yaw_enu = self._yaw_enu() or 0.0
 
-        v_fwd = float(cmd.linear.x)
-        v_left = float(cmd.linear.y)
-        yaw_rate_enu = float(cmd.angular.z)
+        v_fwd = _clamp(float(cmd.linear.x), -self._max_linear_vel, self._max_linear_vel)
+        v_left = _clamp(float(cmd.linear.y), -self._max_linear_vel, self._max_linear_vel)
+        yaw_rate_enu = _clamp(
+            float(cmd.angular.z), -self._max_angular_vel, self._max_angular_vel
+        )
 
         c = math.cos(yaw_enu)
         s = math.sin(yaw_enu)

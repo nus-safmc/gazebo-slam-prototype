@@ -228,7 +228,7 @@ td{padding:4px 8px;border-bottom:1px solid #21262d}
 .state{padding:2px 6px;border-radius:3px;font-size:12px;font-weight:600;display:inline-block}
 .s-AVAILABLE{background:#238636;color:#fff}
 .s-EXECUTING_GOAL{background:#8957e5;color:#fff}
-.s-BOOT,.s-PREFLIGHT{background:#484f58;color:#c9d1d9}
+.s-WAITING_NAV2,.s-BOOT,.s-PREFLIGHT{background:#484f58;color:#c9d1d9}
 .s-ARMED,.s-TAKING_OFF,.s-STAGING{background:#9e6a03;color:#fff}
 .s-RECOVERY{background:#da3633;color:#fff}
 .s-EMERGENCY{background:#f85149;color:#fff}

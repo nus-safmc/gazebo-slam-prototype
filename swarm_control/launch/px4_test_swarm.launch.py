@@ -54,7 +54,7 @@ def generate_launch_description():
     )
     declare_world = DeclareLaunchArgument(
         'world',
-        default_value='playfield_px4_sparse.sdf',
+        default_value='playfield_competition.sdf',
         description='Gazebo world file (under tof_slam_sim/worlds/).',
     )
     declare_dashboard = DeclareLaunchArgument(
@@ -81,6 +81,11 @@ def generate_launch_description():
         'target_alt_m',
         default_value='1.5',
         description='Target hover altitude for PX4 drones (metres).',
+    )
+    declare_swarm_delay = DeclareLaunchArgument(
+        'swarm_delay_sec',
+        default_value='30',
+        description='Seconds to wait before launching swarm + Nav2 (reduces DDS storm).',
     )
 
     sim_launch = IncludeLaunchDescription(
@@ -123,9 +128,12 @@ def generate_launch_description():
         }.items(),
     )
 
-    delayed_swarm = TimerAction(period=60.0, actions=[swarm_launch])
+    delayed_swarm = TimerAction(
+        period=LaunchConfiguration('swarm_delay_sec'),
+        actions=[swarm_launch],
+    )
 
-    # Nav2 stacks launched with 60s delay + staggered per-robot (avoids DDS storm).
+    # Nav2 stacks launched with swarm_delay_sec + staggered per-robot (avoids DDS storm).
     # Only when nav_mode==nav2; px4_swarm_fast skips Nav2 via nav2_launched_externally.
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -141,7 +149,10 @@ def generate_launch_description():
             'use_sim_time': 'true',
         }.items(),
     )
-    delayed_nav2 = TimerAction(period=60.0, actions=[nav2_launch])
+    delayed_nav2 = TimerAction(
+        period=LaunchConfiguration('swarm_delay_sec'),
+        actions=[nav2_launch],
+    )
     delayed_nav2_cond = GroupAction(
         condition=IfCondition(PythonExpression([
             "'", LaunchConfiguration('nav_mode'), "' == 'nav2'"
@@ -159,6 +170,7 @@ def generate_launch_description():
         declare_nav_mode,
         declare_gz_gui,
         declare_target_alt,
+        declare_swarm_delay,
         sim_launch,
         delayed_swarm,
         delayed_nav2_cond,

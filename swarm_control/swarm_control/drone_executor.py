@@ -19,7 +19,7 @@ from rclpy.action import ActionClient
 from rclpy.qos import QoSProfile, ReliabilityPolicy
 
 from nav2_msgs.action import NavigateToPose
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import String
 from action_msgs.msg import GoalStatus
 from tf2_ros import Buffer, TransformListener, TransformException
@@ -28,7 +28,8 @@ from rclpy.time import Time
 
 
 class DroneState(Enum):
-    BOOT = "BOOT"
+    WAITING_NAV2 = "WAITING_NAV2"  # Boot: waiting for Nav2 action server
+    BOOT = "BOOT"  # Legacy alias
     PREFLIGHT = "PREFLIGHT"
     ARMED = "ARMED"
     TAKING_OFF = "TAKING_OFF"
@@ -62,6 +63,9 @@ class DroneExecutor(Node):
         self.declare_parameter('recovery_timeout_sec', 15.0)
         self.declare_parameter('cruise_altitude', 1.2)
         self.declare_parameter('goal_frame', 'robot/map')
+        self.declare_parameter('takeoff_duration_sec', 8.0)
+        self.declare_parameter('staging_yaw_duration_sec', 8.0)
+        self.declare_parameter('staging_yaw_rate_rad_s', 0.15)
 
         self.robot_namespace = self.get_parameter('robot_namespace').value
         self.assignments_topic = self.get_parameter('assignments_topic').value
@@ -70,18 +74,22 @@ class DroneExecutor(Node):
         self.recovery_timeout = self.get_parameter('recovery_timeout_sec').value
         self.cruise_altitude = self.get_parameter('cruise_altitude').value
         self.goal_frame = self.get_parameter('goal_frame').value
+        self.takeoff_duration_sec = self.get_parameter('takeoff_duration_sec').value
+        self.staging_yaw_duration_sec = self.get_parameter('staging_yaw_duration_sec').value
+        self.staging_yaw_rate_rad_s = self.get_parameter('staging_yaw_rate_rad_s').value
 
         self.robot_name = self.robot_namespace.strip('/') or 'robot'
 
         # FSM state
-        self.current_state = DroneState.BOOT
+        self.current_state = DroneState.WAITING_NAV2
         self.current_assignment: Optional[Assignment] = None
         self.goal_handle = None
         self.result_future = None
         self.state_start_time = self.get_clock().now()
-        self.last_pose: Optional[tuple[float, float, float]] = None
+        self.last_pose: Optional[tuple[float, float, float]] = None  # (x, y, yaw)
         self.consecutive_failures = 0
         self._nav2_ready = False
+        self._recovery_reason: Optional[str] = None
 
         # TF
         self.tf_buffer = Buffer(cache_time=Duration(seconds=5.0))
@@ -96,6 +104,11 @@ class DroneExecutor(Node):
             self.drone_states_topic,
             QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=10),
         )
+        self.cmd_vel_pub = self.create_publisher(
+            Twist,
+            'cmd_vel',
+            QoSProfile(reliability=ReliabilityPolicy.RELIABLE, depth=5),
+        )
 
         # Subscribers
         self.create_subscription(
@@ -106,6 +119,7 @@ class DroneExecutor(Node):
         )
 
         self.timer = self.create_timer(0.5, self._fsm_tick)
+        self.cmd_vel_timer = self.create_timer(0.1, self._cmd_vel_tick)
 
         self.get_logger().info(
             f'DroneExecutor initialized: robot={self.robot_name}, '
@@ -150,7 +164,8 @@ class DroneExecutor(Node):
         self._update_pose()
 
         handler = {
-            DroneState.BOOT: self._handle_boot,
+            DroneState.WAITING_NAV2: self._handle_waiting_nav2,
+            DroneState.BOOT: self._handle_waiting_nav2,
             DroneState.PREFLIGHT: self._handle_preflight,
             DroneState.ARMED: self._handle_armed,
             DroneState.TAKING_OFF: self._handle_taking_off,
@@ -168,6 +183,21 @@ class DroneExecutor(Node):
             handler()
 
         self._publish_state()
+
+    # ── Passive yaw (staging / takeoff) ────────────────────────────────
+
+    def _cmd_vel_tick(self) -> None:
+        """Publish slow yaw during TAKING_OFF and STAGING for better initial mapping."""
+        if self.current_state not in (DroneState.TAKING_OFF, DroneState.STAGING):
+            return
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.linear.y = 0.0
+        msg.linear.z = 0.0
+        msg.angular.x = 0.0
+        msg.angular.y = 0.0
+        msg.angular.z = float(self.staging_yaw_rate_rad_s)
+        self.cmd_vel_pub.publish(msg)
 
     # ── Pose ─────────────────────────────────────────────────────────
 
@@ -192,8 +222,8 @@ class DroneExecutor(Node):
 
     # ── State handlers ───────────────────────────────────────────────
 
-    def _handle_boot(self) -> None:
-        """Wait for Nav2 action server."""
+    def _handle_waiting_nav2(self) -> None:
+        """Wait for Nav2 action server before proceeding."""
         if not self._nav2_ready:
             self._nav2_ready = self.nav_client.wait_for_server(timeout_sec=0.0)
 
@@ -214,12 +244,13 @@ class DroneExecutor(Node):
             self._transition_to(DroneState.TAKING_OFF)
 
     def _handle_taking_off(self) -> None:
-        """In simulation, skip physical takeoff and go straight to staging."""
-        self._transition_to(DroneState.STAGING)
+        """Wait for takeoff duration before marking as staged (odom is 2D, no altitude)."""
+        if self._elapsed_in_state() >= self.takeoff_duration_sec:
+            self._transition_to(DroneState.STAGING)
 
     def _handle_staging(self) -> None:
-        """Brief pause before becoming available for assignments."""
-        if self._elapsed_in_state() > 1.0:
+        """Passive yaw in place to improve initial map, then become available."""
+        if self._elapsed_in_state() >= self.staging_yaw_duration_sec:
             self._transition_to(DroneState.AVAILABLE)
 
     def _handle_available(self) -> None:
@@ -239,9 +270,11 @@ class DroneExecutor(Node):
             return
 
         if self._elapsed_in_state() > self.goal_timeout:
-            self.get_logger().warn(f'Goal timeout after {self.goal_timeout:.0f}s')
+            self._transition_to_recovery(
+                f'goal_timeout after {self.goal_timeout:.0f}s (no Nav2 result)'
+            )
             self._cancel_nav_goal()
-            self._transition_to(DroneState.RECOVERY)
+            return
 
     def _handle_recovery(self) -> None:
         if self._elapsed_in_state() > self.recovery_timeout:
@@ -252,6 +285,7 @@ class DroneExecutor(Node):
             else:
                 self.get_logger().info('Recovery done, returning to AVAILABLE')
                 self.current_assignment = None
+                self._recovery_reason = None
                 self._transition_to(DroneState.AVAILABLE)
 
     def _handle_returning(self) -> None:
@@ -293,15 +327,13 @@ class DroneExecutor(Node):
         try:
             goal_handle = future.result()
             if not goal_handle.accepted:
-                self.get_logger().warn('Nav2 rejected goal')
-                self._transition_to(DroneState.RECOVERY)
+                self._transition_to_recovery('Nav2 rejected goal (not accepted)')
                 return
             self.goal_handle = goal_handle
             self.result_future = goal_handle.get_result_async()
             self.result_future.add_done_callback(self._goal_result_callback)
         except Exception as e:
-            self.get_logger().error(f'Goal response error: {e}')
-            self._transition_to(DroneState.RECOVERY)
+            self._transition_to_recovery(f'goal_response exception: {e}')
 
     def _goal_result_callback(self, future) -> None:
         try:
@@ -309,15 +341,13 @@ class DroneExecutor(Node):
             if result.status == GoalStatus.STATUS_SUCCEEDED:
                 self.get_logger().info('Navigation succeeded')
             elif result.status == GoalStatus.STATUS_ABORTED:
-                self.get_logger().warn('Navigation aborted by Nav2')
-                self._transition_to(DroneState.RECOVERY)
+                self._transition_to_recovery('Nav2 aborted goal (STATUS_ABORTED)')
             elif result.status == GoalStatus.STATUS_CANCELED:
                 self.get_logger().info('Navigation goal canceled')
             else:
-                self.get_logger().info(f'Navigation result status={result.status}')
+                self._transition_to_recovery('Nav2 goal failed (status={})'.format(result.status))
         except Exception as e:
-            self.get_logger().error(f'Goal result error: {e}')
-            self._transition_to(DroneState.RECOVERY)
+            self._transition_to_recovery(f'goal_result exception: {e}')
         finally:
             self.goal_handle = None
             self.result_future = None
@@ -334,6 +364,12 @@ class DroneExecutor(Node):
 
     def _elapsed_in_state(self) -> float:
         return (self.get_clock().now() - self.state_start_time).nanoseconds * 1e-9
+
+    def _transition_to_recovery(self, reason: str) -> None:
+        """Transition to RECOVERY and log the reason."""
+        self._recovery_reason = reason
+        self.get_logger().warn(f'Entering RECOVERY: {reason}')
+        self._transition_to(DroneState.RECOVERY)
 
     def _transition_to(self, new_state: DroneState) -> None:
         if self.current_state != new_state:

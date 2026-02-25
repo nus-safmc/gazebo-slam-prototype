@@ -94,34 +94,27 @@ def _default_spawns(*, world_sdf_path: str, robots: list[str]) -> dict[str, tupl
 
     _view, spawn_bounds = extract_view_and_spawn_bounds(world_sdf_path=world_sdf_path)
 
-    # Prefer a compact cluster near the arena center so multi-drone runs don't allocate
-    # (or visually imply) the full playfield before exploration begins.
-    #
-    # This is mostly for headless / CI-like runs that use `default_spawn:=true`.
-    # For interactive sessions, use the spawn UI to pick exact locations.
-    margin_m = 4.0
-    center_x = 0.5 * (spawn_bounds.min_x + spawn_bounds.max_x)
-    # Bias default spawns slightly "south" of center to avoid the densest obstacle cluster.
-    center_y = float(spawn_bounds.min_y + 0.25 * (spawn_bounds.max_y - spawn_bounds.min_y))
+    # Compact cluster in the spawn zone to reduce bad initial map / waypoint issues.
+    # Center of spawn zone with fixed 2 m spacing between drones.
+    margin_m = 0.5
     min_x = float(spawn_bounds.min_x + margin_m)
     max_x = float(spawn_bounds.max_x - margin_m)
     min_y = float(spawn_bounds.min_y + margin_m)
     max_y = float(spawn_bounds.max_y - margin_m)
+    center_x = 0.5 * (min_x + max_x)
+    center_y = 0.5 * (min_y + max_y)
+    spacing_m = 2.0
 
     if min_x < max_x and min_y < max_y:
-        # Keep drones far enough apart that their initial ToF returns don't immediately
-        # see each other as obstacles (which can stall early exploration).
-        spacing_m = 4.0
         n = max(1, len(robots))
         cols = max(1, int(math.ceil(math.sqrt(n))))
         rows = max(1, int(math.ceil(n / cols)))
         start_x = center_x - 0.5 * spacing_m * (cols - 1)
         start_y = center_y - 0.5 * spacing_m * (rows - 1)
-
         out: dict[str, tuple[float, float, float]] = {}
         for idx, r in enumerate(robots):
-            row = idx // cols
             col = idx % cols
+            row = idx // cols
             x = start_x + float(col) * spacing_m
             y = start_y + float(row) * spacing_m
             x = float(max(min_x, min(max_x, x)))
@@ -129,7 +122,9 @@ def _default_spawns(*, world_sdf_path: str, robots: list[str]) -> dict[str, tupl
             out[r] = (x, y, 0.0)
         return out
 
-    # Fallback: pick spawn spots closest to the center.
+    # Fallback: pick spawn spots across the zone.
+    center_x = 0.5 * (spawn_bounds.min_x + spawn_bounds.max_x)
+    center_y = 0.5 * (spawn_bounds.min_y + spawn_bounds.max_y)
     spots = default_spawn_spots(
         bounds=Bounds(
             min_x=spawn_bounds.min_x,
@@ -674,7 +669,7 @@ def generate_launch_description() -> LaunchDescription:
     )
     declare_world = DeclareLaunchArgument(
         'world',
-        default_value='playfield_px4_sparse_annex.sdf',
+        default_value='playfield_competition.sdf',
         description='World file under tof_slam_sim/worlds (PX4-safe defaults).',
     )
     declare_gz_world_name = DeclareLaunchArgument(
@@ -744,8 +739,8 @@ def generate_launch_description() -> LaunchDescription:
     )
     declare_spawn_z = DeclareLaunchArgument(
         'spawn_z_m',
-        default_value='0.2',
-        description='Initial spawn height (meters) for each vehicle.',
+        default_value='0.4',
+        description='Initial spawn height (meters) for each vehicle; 0.4 avoids ground clipping.',
     )
     declare_px4_delay = DeclareLaunchArgument(
         'px4_start_delay_sec',

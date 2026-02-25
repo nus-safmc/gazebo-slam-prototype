@@ -49,6 +49,15 @@ while [[ $# -gt 0 ]]; do
     shift
     continue
   fi
+  if [[ "$a" == "--swarm-delay" ]]; then
+    if [[ $# -lt 1 ]]; then
+      echo "error: --swarm-delay requires seconds (e.g. 30)" >&2
+      exit 2
+    fi
+    ARGS+=("swarm_delay_sec:=$1")
+    shift
+    continue
+  fi
   ARGS+=("$a")
 done
 
