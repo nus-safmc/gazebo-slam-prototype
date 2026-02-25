@@ -5,9 +5,9 @@ This repo is a ROS 2 + Gazebo simulation stack for fast 2D mapping and multi‑r
 It contains two “tracks”:
 
 - **PX4 SITL track** (more realistic autopilot integration; runs `PX4-Autopilot/` SITL).
-- **Fast prototyping track** (lightweight `rex_quadcopter` model + ROS navigation/mapping tools; supports swarm runs up to 15 drones).
+- **🚨 DEPRECATED: Fast prototyping track** (lightweight `rex_quadcopter` model + ROS navigation/mapping tools; supports swarm runs up to 15 drones).
 
-The rest of this document focuses on the **fast prototyping track**, since that’s what the swarm tooling uses.
+⚠️ **The fast prototyping track is DEPRECATED.** All new development focuses on the PX4 SITL track. The rest of this document describes both tracks, with the deprecated fast prototyping track clearly marked.
 
 ## PX4 SITL Track (Single Drone)
 
@@ -30,6 +30,53 @@ If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of t
   - The older `playfield_sparse.sdf` / `playfield.sdf` worlds are fast-track oriented and include `rex_quadcopter` models, so they will spawn an extra drone if used with PX4.
   - RViz scan tip: `/scan_merged` is the SLAM/Nav2 scan. For PX4, “no return” beams are published as a finite threshold (~4.05m) so slam_toolbox (Karto) can clear free space; `/scan_merged_viz` fills any remaining `inf` with `range_max` for display.
   - To switch SLAM profile: `pixi run -e jazzy px4_nav2_explore slam_config:=slam_toolbox_px4_fast.yaml` (or `slam_toolbox_px4_robust.yaml`).
+
+---
+
+## 🚨 DEPRECATED: Lightweight rex_quadcopter Track
+
+**⚠️ The lightweight `rex_quadcopter` model is DEPRECATED and will be removed in a future version. All development is now focused on the PX4 SITL track for realistic autopilot integration.**
+
+### What Still Uses rex_quadcopter (Dependencies to Deprecate)
+
+**Launch Files (Deprecated):**
+- `tof_slam_sim/launch/sim_with_bridge.launch.py` - Uses rex_quadcopter models
+- `tof_slam_sim/launch/swarm_fast.launch.py` - Uses rex_quadcopter models
+
+**Scripts (Deprecated):**
+- `scripts/run_swarm_fast.sh` → calls deprecated `swarm_fast.launch.py`
+- `pixi.toml` tasks:
+  - `swarm_fast = "bash scripts/run_swarm_fast.sh"`
+  - `old_sim = "ros2 launch tof_slam_sim sim_with_bridge.launch.py"`
+
+**World Files (Contain rex_quadcopter includes):**
+- `tof_slam_sim/worlds/playfield_sparse.sdf`
+- `tof_slam_sim/worlds/playfield_swarm.sdf`
+- `tof_slam_sim/worlds/playfield.sdf`
+- `tof_slam_sim/worlds/playfield_competition.sdf`
+
+**Code References:**
+- `tof_slam_sim/tof_slam_sim/spawn_selector.py` - Logic to spawn rex_quadcopter models
+- `tof_slam_sim/tof_slam_sim/scan_merger.py` - Comments reference rex_quadcopter ring offsets
+- `tof_slam_sim/config/slam_toolbox.yaml` - Comments reference rex_quadcopter sensor ranges
+
+### Migration Path
+
+**Immediate Actions:**
+1. Mark all rex_quadcopter components as deprecated with clear warnings
+2. Update documentation to direct users to PX4 equivalents
+3. Add deprecation warnings in launch files and scripts
+
+**Future Removal:**
+- Remove rex_quadcopter model spawning logic from `spawn_selector.py`
+- Delete deprecated launch files and scripts
+- Remove rex_quadcopter references from configuration files
+- Update world files to remove rex_quadcopter includes
+
+**Current Usage (Verify Before Deprecating):**
+- `pixi run -e jazzy old_sim` - single robot with rex_quadcopter
+- `pixi run -e jazzy swarm_fast -- --num-drones N` - swarm with rex_quadcopter models
+- Any direct calls to `sim_with_bridge.launch.py` or `swarm_fast.launch.py`
 
 ---
 
@@ -57,7 +104,7 @@ If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of t
 
 ---
 
-## Core Ideas / Architecture
+## 🚨 DEPRECATED: Core Ideas / Architecture (Fast Prototyping Track)
 
 ### 1) World + robot models
 
@@ -131,7 +178,7 @@ The default RViz config (`tof_slam_sim/config/slam.rviz`) includes a `MarkerArra
 
 ---
 
-## How To Run (Fast Track)
+## 🚨 DEPRECATED: How To Run (Fast Track)
 
 ### Build
 
@@ -218,7 +265,7 @@ ros2 launch tof_slam_sim sim_with_bridge.launch.py world:=playfield_sparse.sdf r
 
 ---
 
-## Where To Look in the Code
+## 🚨 DEPRECATED: Where To Look in the Code (Fast Track Components)
 
 - Launch:
   - `tof_slam_sim/launch/sim_with_bridge.launch.py` (Gazebo + bridge)
