@@ -1,3 +1,9 @@
+"""
+.. deprecated::
+    This launch file uses the legacy rex_quadcopter Gazebo-only models.
+    For PX4 SITL simulation use ``px4_swarm_fast.launch.py`` instead,
+    or launch via ``swarm_control``'s ``test_swarm.launch.py``.
+"""
 from __future__ import annotations
 
 import math
@@ -452,13 +458,15 @@ def _build_swarm(context):
             'robots': robots,
             'scan_topics': scan_topics,
             'resolution': 0.05,
-            'min_x': -20.0,
-            'max_x': 20.0,
-            'min_y': -20.0,
-            'max_y': 20.0,
+            'min_x': -11.0,
+            'max_x': 11.0,
+            'min_y': -11.0,
+            'max_y': 11.0,
             'seed_keepout': True,
-            'keepout_margin_m': 1.6,
+            'keepout_margin_m': 1.0,
             'publish_period_sec': 0.5,
+            'occ_update': 8,
+            'no_hit_free_fraction': 0.3,
         }],
     )
 

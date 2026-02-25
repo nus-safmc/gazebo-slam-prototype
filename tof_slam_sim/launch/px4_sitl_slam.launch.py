@@ -25,6 +25,12 @@ def generate_launch_description():
         default_value='true',
         description='Use simulation time',
     )
+    vehicle_odometry_topic = LaunchConfiguration('vehicle_odometry_topic')
+    declare_vehicle_odometry_topic = DeclareLaunchArgument(
+        'vehicle_odometry_topic',
+        default_value='/fmu/out/vehicle_odometry',
+        description='PX4 VehicleOdometry topic (commonly /fmu/out/vehicle_odometry or /fmu/out/estimator_odometry).',
+    )
 
     px4_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
@@ -33,14 +39,37 @@ def generate_launch_description():
         launch_arguments={'use_sim_time': use_sim_time}.items(),
     )
 
-    pose_to_tf = Node(
+    px4_odom_to_odom = Node(
         package='tof_slam_sim',
-        executable='pose_to_tf.py',
-        name='pose_to_tf',
+        executable='px4_vehicle_odometry_to_odom',
+        name='px4_vehicle_odometry_to_odom',
+        output='screen',
         parameters=[{
             'use_sim_time': use_sim_time,
+            'vehicle_odometry_topic': vehicle_odometry_topic,
+            'odom_topic': '/odom',
+            'frame_id': 'robot/odom',
+            'child_frame_id': 'robot/base_footprint',
+            'yaw_only': True,
+            'use_message_z': False,
+            'z_override': 0.0,
+        }],
+    )
+
+    odom_tf = Node(
+        package='tof_slam_sim',
+        executable='odom_tf_publisher',
+        name='odom_tf_publisher',
+        output='screen',
+        parameters=[{
+            'use_sim_time': use_sim_time,
+            'odom_topic': '/odom',
             'parent_frame': 'robot/odom',
-            'child_frame': 'robot/base_link',
+            'child_frame': 'robot/base_footprint',
+            'yaw_only': True,
+            'use_message_z': False,
+            'z_override': 0.0,
+            'smoothing_alpha': 1.0,
         }],
     )
 
@@ -96,18 +125,6 @@ def generate_launch_description():
         )
     )
 
-    map_tf_fallback = Node(
-        package='tof_slam_sim',
-        executable='map_tf_fallback',
-        name='map_tf_fallback',
-        parameters=[{
-            'use_sim_time': use_sim_time,
-            'parent_frame': 'robot/map',
-            'child_frame': 'robot/odom',
-            'rate_hz': 10.0,
-        }],
-    )
-
     static_basefoot_to_baselink = Node(
         package='tf2_ros',
         executable='static_transform_publisher',
@@ -125,18 +142,19 @@ def generate_launch_description():
         package='rviz2',
         executable='rviz2',
         name='rviz2',
-        arguments=['-d', PathJoinSubstitution([pkg_tof_slam_sim, 'config', 'slam.rviz'])],
+        arguments=['-d', PathJoinSubstitution([pkg_tof_slam_sim, 'config', 'slam_px4.rviz'])],
         parameters=[{'use_sim_time': use_sim_time}],
     )
 
     ld = LaunchDescription()
     ld.add_action(declare_use_sim_time)
+    ld.add_action(declare_vehicle_odometry_topic)
     ld.add_action(px4_launch)
-    ld.add_action(pose_to_tf)
+    ld.add_action(px4_odom_to_odom)
+    ld.add_action(odom_tf)
     ld.add_action(slam_toolbox)
     ld.add_action(slam_configure)
     ld.add_action(slam_activate)
-    ld.add_action(map_tf_fallback)
     ld.add_action(static_basefoot_to_baselink)
     ld.add_action(rviz)
     return ld

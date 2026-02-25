@@ -13,4 +13,8 @@ if defined RMW_IMPLEMENTATION (
 REM Force CycloneDDS to avoid FastDDS hanging issues
 set "RMW_IMPLEMENTATION=rmw_cyclonedds_cpp"
 
+REM Find project root and set CycloneDDS config
+for %%i in ("%~dp0..") do set "PROJECT_ROOT=%%~fi"
+set "CYCLONEDDS_URI=file://%PROJECT_ROOT%\scripts\px4\cyclonedds.xml"
+
 echo ROS 2 DDS configured: RMW_IMPLEMENTATION=%RMW_IMPLEMENTATION%

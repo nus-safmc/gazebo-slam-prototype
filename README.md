@@ -1,6 +1,12 @@
 # Gazebo SLAM Prototype
 
-Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in the Loop (SITL)
+Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in the Loop (SITL) for realistic autopilot integration that translates directly to real hardware deployment
+
+## Architecture Overview
+
+This project uses PX4 Software-In-The-Loop (SITL) simulation that provides **realistic autopilot integration**. Your ROS 2 SLAM stack runs identically in simulation and on real drones - the only difference is the transport layer (UDP in simulation, serial/USB on hardware).
+
+**Key insight**: When you develop SLAM algorithms here, you're developing against the same software that runs on production PX4 drones. See [CONCEPTS.md](CONCEPTS.md#simulation-to-hardware-architecture) for the complete simulation-to-hardware architecture explanation.
 
 ## Quick Start
 
@@ -106,6 +112,48 @@ sequenceDiagram
 
 ### Package Structure
 
+```
+gazebo-slam-prototype/
+├── scripts/                    # Organized project scripts
+│   ├── README.md              # Scripts documentation and usage guide
+│   ├── core/                  # Core infrastructure scripts
+│   │   ├── cleanup_sim.sh     # Reset simulation state
+│   │   ├── run_with_log.sh    # Run commands with logging
+│   │   └── tail_latest_log.sh # Monitor latest logs
+│   ├── px4/                   # PX4 integration scripts
+│   │   ├── run_px4_sitl.sh    # Launch PX4 SITL
+│   │   ├── activate-cyclonedds.sh # DDS configuration
+│   │   └── check_microxrce_agent.sh # Verify PX4 agent
+│   ├── swarm/                 # Multi-robot scripts
+│   │   ├── run_swarm_fast.sh  # Launch drone swarms
+│   │   └── run_px4_swarm_fast.sh # PX4 swarm launcher
+│   ├── verify/                # Health check scripts
+│   │   ├── verify_tf_rates.sh # Check TF tree health
+│   │   └── verify_map_runtime.sh # Validate SLAM
+│   └── test/                  # Automated testing
+│       ├── px4_map_smoketest.sh # Test mapping
+│       └── px4_swarm_smoketest.sh # Test swarms
+├── setup/                     # ⚠️ DEPRECATED setup scripts
+│   ├── setup.sh               # ❌ DEPRECATED - Bash setup
+│   ├── setup.zsh              # ❌ DEPRECATED - Zsh setup
+│   ├── local_setup.sh         # ❌ DEPRECATED - Local bash setup
+│   └── README.md              # Setup documentation
+├── tof_slam_sim/              # ROS 2 package
+│   ├── CMakeLists.txt         # Build configuration
+│   ├── package.xml            # Package metadata
+│   ├── launch/                # ROS launch files
+│   ├── src/                   # Python ROS nodes
+│   ├── models/                # Gazebo models
+│   └── worlds/                # Gazebo worlds
+├── PX4-Autopilot/             # PX4 firmware submodule
+└── pixi.toml                  # Environment configuration
+```
+
+**Key Directories:**
+- **`scripts/`**: All project scripts, organized by function (see `scripts/README.md`)
+- **`setup/`**: Shell-specific environment setup scripts
+- **`tof_slam_sim/`**: Main ROS 2 package with simulation logic
+- **`PX4-Autopilot/`**: PX4 firmware submodule for SITL simulation
 
 ## Development
 
@@ -148,6 +196,36 @@ pixi run -e jazzy build
 - **Simple**: One-command setup and activation
 - **Fast**: Incremental builds and caching
 - **DDS-Ready**: Automatically configured with CycloneDDS (prevents FastDDS hanging)
+
+## Deprecated Features & Migration
+
+### ⚠️ Deprecated Setup Scripts
+The traditional ROS 2 setup scripts in `setup/` directory are **deprecated** and should not be used. This project uses pixi for environment management:
+
+```bash
+# ✅ Correct - use pixi
+pixi shell -e jazzy
+
+# ❌ Wrong - don't use these
+source setup/setup.sh  # DEPRECATED
+```
+
+### 📋 Deprecated Pixi Tasks
+Some pixi tasks are deprecated in favor of newer approaches:
+
+- `old_sim` → Use `sim` task instead
+- `bridge` → Use launch files instead (hardcoded paths)
+- `launch_robot1` → Use proper swarm control instead
+
+#### Dependencies of Deprecated Tasks:
+- `old_sim`: `sim_with_bridge.launch.py`, `cleanup_sim.sh`
+- `bridge`: `ros_gz_bridge` package, `bridge.yaml` (hardcoded path)
+- `launch_robot1`: `teleop_twist_keyboard` package (available via `ros-jazzy-desktop`)
+
+### 🔄 Migration Guide
+- **Environment Setup**: Use `pixi shell -e jazzy` instead of sourcing ROS setup scripts
+- **Simulation Launch**: Use organized scripts in `scripts/` directory
+- **Swarm Coordination**: Consider `swarm_control` package for advanced multi-robot scenarios
 
 ## Troubleshooting
 

@@ -89,39 +89,64 @@ def _compose_xy_yaw(
     return wx, wy, pyaw + cyaw
 
 
-def _extract_obstacles_and_bounds(*, world_sdf_path: str) -> tuple[list[Box2D], list[Circle2D], Bounds]:
+def _extract_obstacles_and_bounds(
+    *, world_sdf_path: str
+) -> tuple[list[Box2D], list[Circle2D], Bounds, Bounds]:
     tree = ET.parse(world_sdf_path)
     root = tree.getroot()
 
     boxes: list[Box2D] = []
     circles: list[Circle2D] = []
 
-    # Prefer ground plane size (present in this repo's worlds) as our view bounds.
-    bounds: Optional[Bounds] = None
+    view_bounds: Optional[Bounds] = None
+    spawn_bounds: Optional[Bounds] = None
+
+    def _merge(bounds: Optional[Bounds], *, min_x: float, max_x: float, min_y: float, max_y: float) -> Bounds:
+        if bounds is None:
+            return Bounds(min_x=float(min_x), max_x=float(max_x), min_y=float(min_y), max_y=float(max_y))
+        return Bounds(
+            min_x=float(min(bounds.min_x, min_x)),
+            max_x=float(max(bounds.max_x, max_x)),
+            min_y=float(min(bounds.min_y, min_y)),
+            max_y=float(max(bounds.max_y, max_y)),
+        )
+
+    def _bounds_from_box(box: Box2D) -> Bounds:
+        corners = _rect_corners(box)
+        xs = [p[0] for p in corners]
+        ys = [p[1] for p in corners]
+        return Bounds(min_x=min(xs), max_x=max(xs), min_y=min(ys), max_y=max(ys))
 
     for model in root.findall(".//world/model"):
         model_name = model.get("name", "")
         mx, my, _mz, _mr, _mp, myaw = _parse_pose((model.findtext("pose") or "").strip())
 
-        if model_name == "ground_plane":
-            plane_size = model.find(".//geometry/plane/size")
+        if model_name == "spawn_zone":
+            # A visual-only plane used to restrict spawn placement (e.g. exclude annex areas).
+            plane_size = model.find(".//visual//geometry/plane/size")
+            if plane_size is None:
+                plane_size = model.find(".//collision//geometry/plane/size")
             if plane_size is not None and (plane_size.text or "").strip():
                 parts = [p for p in plane_size.text.strip().split() if p]
                 if len(parts) >= 2:
                     sx = float(parts[0])
                     sy = float(parts[1])
-                    half_x = 0.5 * sx
-                    half_y = 0.5 * sy
-                    bounds = Bounds(
-                        min_x=-half_x,
-                        max_x=half_x,
-                        min_y=-half_y,
-                        max_y=half_y,
-                    )
+                    b = _bounds_from_box(Box2D(cx=mx, cy=my, sx=sx, sy=sy, yaw=myaw))
+                    spawn_bounds = _merge(spawn_bounds, min_x=b.min_x, max_x=b.max_x, min_y=b.min_y, max_y=b.max_y)
 
         for collision in model.findall(".//link/collision"):
             cx, cy, _cz, _cr, _cp, cyaw = _parse_pose((collision.findtext("pose") or "").strip())
             wx, wy, wyaw = _compose_xy_yaw((mx, my, myaw), (cx, cy, cyaw))
+
+            plane = collision.find(".//geometry/plane/size")
+            if plane is not None and (plane.text or "").strip():
+                parts = [p for p in plane.text.strip().split() if p]
+                if len(parts) >= 2:
+                    sx = float(parts[0])
+                    sy = float(parts[1])
+                    b = _bounds_from_box(Box2D(cx=wx, cy=wy, sx=sx, sy=sy, yaw=wyaw))
+                    view_bounds = _merge(view_bounds, min_x=b.min_x, max_x=b.max_x, min_y=b.min_y, max_y=b.max_y)
+                continue
 
             box = collision.find(".//geometry/box/size")
             if box is not None and (box.text or "").strip():
@@ -139,11 +164,14 @@ def _extract_obstacles_and_bounds(*, world_sdf_path: str) -> tuple[list[Box2D], 
                     circles.append(Circle2D(cx=wx, cy=wy, r=float(r_el.text.strip())))
                 continue
 
-    if bounds is None:
+    if view_bounds is None:
         # Fallback (matches the current 40×40 playfield).
-        bounds = Bounds(min_x=-20.0, max_x=20.0, min_y=-20.0, max_y=20.0)
+        view_bounds = Bounds(min_x=-20.0, max_x=20.0, min_y=-20.0, max_y=20.0)
 
-    return boxes, circles, bounds
+    if spawn_bounds is None:
+        spawn_bounds = view_bounds
+
+    return boxes, circles, view_bounds, spawn_bounds
 
 
 def _rect_corners(box: Box2D) -> list[tuple[float, float]]:
@@ -172,7 +200,9 @@ def select_spawn_points(
     except Exception:
         return None
 
-    boxes, circles, bounds = _extract_obstacles_and_bounds(world_sdf_path=world_sdf_path)
+    boxes, circles, view_bounds, spawn_bounds = _extract_obstacles_and_bounds(
+        world_sdf_path=world_sdf_path
+    )
     _ = spots  # kept for backward compatibility; UI now allows free placement.
 
     w_px = 800
@@ -182,8 +212,8 @@ def select_spawn_points(
     canvas_h = h_px + 2 * pad_px
 
     def world_to_px(wx: float, wy: float) -> tuple[float, float]:
-        x = (wx - bounds.min_x) / (bounds.max_x - bounds.min_x)
-        y = (wy - bounds.min_y) / (bounds.max_y - bounds.min_y)
+        x = (wx - view_bounds.min_x) / (view_bounds.max_x - view_bounds.min_x)
+        y = (wy - view_bounds.min_y) / (view_bounds.max_y - view_bounds.min_y)
         px = pad_px + x * w_px
         py = pad_px + (1.0 - y) * h_px
         return px, py
@@ -191,8 +221,8 @@ def select_spawn_points(
     def px_to_world(px: float, py: float) -> tuple[float, float]:
         x = (px - pad_px) / w_px
         y = 1.0 - (py - pad_px) / h_px
-        wx = bounds.min_x + x * (bounds.max_x - bounds.min_x)
-        wy = bounds.min_y + y * (bounds.max_y - bounds.min_y)
+        wx = view_bounds.min_x + x * (view_bounds.max_x - view_bounds.min_x)
+        wy = view_bounds.min_y + y * (view_bounds.max_y - view_bounds.min_y)
         return wx, wy
 
     color_cycle = ['#00d1ff', '#ff5fa2', '#7CFF6B', '#FFD34D', '#b59bff', '#ff9b4a']
@@ -248,7 +278,9 @@ def select_spawn_points(
 
     # Placement safety margins.
     spawn_clearance_m = float(os.environ.get("SPAWN_CLEARANCE_M", "0.45"))
-    spawn_min_separation_m = float(os.environ.get("SPAWN_MIN_SEPARATION_M", "0.85"))
+    # Default separation is tuned for PX4 swarms: if drones spawn too close, their
+    # ToF scans see each other and exploration can stall (or drones collide at takeoff).
+    spawn_min_separation_m = float(os.environ.get("SPAWN_MIN_SEPARATION_M", "2.5"))
     spawn_bounds_margin_m = float(os.environ.get("SPAWN_BOUNDS_MARGIN_M", "0.40"))
 
     def _point_in_box(wx: float, wy: float, b: Box2D, margin: float) -> bool:
@@ -265,10 +297,10 @@ def select_spawn_points(
 
     def _is_valid_spawn(wx: float, wy: float) -> tuple[bool, str]:
         if not (
-            bounds.min_x + spawn_bounds_margin_m <= wx <= bounds.max_x - spawn_bounds_margin_m
-            and bounds.min_y + spawn_bounds_margin_m <= wy <= bounds.max_y - spawn_bounds_margin_m
+            spawn_bounds.min_x + spawn_bounds_margin_m <= wx <= spawn_bounds.max_x - spawn_bounds_margin_m
+            and spawn_bounds.min_y + spawn_bounds_margin_m <= wy <= spawn_bounds.max_y - spawn_bounds_margin_m
         ):
-            return False, "Outside arena bounds"
+            return False, "Outside spawn zone"
 
         for b in boxes:
             if _point_in_box(wx, wy, b, spawn_clearance_m):
@@ -286,10 +318,15 @@ def select_spawn_points(
     def redraw() -> None:
         canvas.delete("all")
 
-        # Draw bounds.
-        x0, y0 = world_to_px(bounds.min_x, bounds.max_y)
-        x1, y1 = world_to_px(bounds.max_x, bounds.min_y)
+        # Draw overall view bounds (includes annex areas).
+        x0, y0 = world_to_px(view_bounds.min_x, view_bounds.max_y)
+        x1, y1 = world_to_px(view_bounds.max_x, view_bounds.min_y)
         canvas.create_rectangle(x0, y0, x1, y1, outline="#2a2f3a", width=2)
+
+        # Draw spawn bounds (restricted area).
+        sx0, sy0 = world_to_px(spawn_bounds.min_x, spawn_bounds.max_y)
+        sx1, sy1 = world_to_px(spawn_bounds.max_x, spawn_bounds.min_y)
+        canvas.create_rectangle(sx0, sy0, sx1, sy1, outline="#3a5f4d", width=2)
 
         # Obstacles.
         for b in boxes:
@@ -302,7 +339,7 @@ def select_spawn_points(
 
         for c in circles:
             px, py = world_to_px(c.cx, c.cy)
-            pr = (c.r / (bounds.max_x - bounds.min_x)) * w_px
+            pr = (c.r / (view_bounds.max_x - view_bounds.min_x)) * w_px
             canvas.create_oval(px - pr, py - pr, px + pr, py + pr, fill="#3b3f46", outline="#505662", width=1)
 
         # Markers.
@@ -502,3 +539,15 @@ def extract_robot_includes(
         px, py, _pz, _r, _p, yaw = _parse_pose((inc.findtext("pose") or "").strip())
         out[name] = (uri, (px, py, yaw))
     return out
+
+
+def extract_view_and_spawn_bounds(*, world_sdf_path: str) -> tuple[Bounds, Bounds]:
+    """Return (view_bounds, spawn_bounds) for a world SDF.
+
+    `view_bounds` is what the spawn UI renders (typically the union of all ground planes).
+    `spawn_bounds` is where spawning is allowed (typically from a `spawn_zone` model).
+    """
+    _boxes, _circles, view_bounds, spawn_bounds = _extract_obstacles_and_bounds(
+        world_sdf_path=world_sdf_path
+    )
+    return view_bounds, spawn_bounds

@@ -2,14 +2,21 @@
 
 ## Project Architecture Overview
 
-This project implements a ROS 2 Gazebo simulation for 2D SLAM using 8 VL53L7CX ToF sensors mounted on a quadcopter drone. The system uses RoboStack + PIXI for environment management and CycloneDDS for ROS communication.
+This project implements a ROS 2 Gazebo simulation for 2D SLAM using 8 VL53L7CX-equivalent ToF sensors mounted on PX4 SITL drones. The system uses RoboStack + PIXI for environment management, CycloneDDS for ROS communication, and MicroXRCE-DDS for PX4-ROS 2 transport.
 
 ### Core Components
-- **Gazebo Harmonic**: Physics simulation with custom drone model
+- **Gazebo Harmonic**: Physics simulation with PX4 x500_small_tof drone model
+- **PX4 SITL**: Real flight controller firmware per drone (offboard velocity control, EKF2 state estimation)
 - **ROS 2 Jazzy**: Robotics middleware via RoboStack PIXI environment
-- **8× VL53L7CX Sensors**: Simulated depth cameras arranged in circular pattern
-- **ros_gz_bridge**: Bidirectional topic bridging between Gazebo and ROS
+- **TOF-Ring**: 8 depth cameras (8x8 px, 45-deg HFOV, 4m range) arranged in a ring on the PX4 drone
+- **MicroXRCE-DDS**: PX4 to ROS 2 transport layer
+- **ros_gz_bridge**: Bridging depth images and clock from Gazebo to ROS
 - **CycloneDDS**: DDS implementation for reliable ROS communication
+- **swarm_control**: Centralized frontier exploration (FrontierServer, GoalAllocator, DroneExecutors)
+
+### Two-Package Architecture
+- **tof_slam_sim**: Simulation infrastructure (Gazebo, PX4, sensors, bridges, map fusion, TF)
+- **swarm_control**: Centralized swarm brain (frontier detection, goal allocation, mission management, web dashboard)
 
 ## Environment Setup & Package Management
 

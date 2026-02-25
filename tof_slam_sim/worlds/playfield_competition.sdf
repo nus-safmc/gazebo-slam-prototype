@@ -1,9 +1,13 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
+  <!-- PX4-friendly competition arena: no embedded rex_quadcopter models. -->
+  <!-- Drones are spawned dynamically by PX4 SITL via px4_swarm_fast.launch.py -->
   <world name="playfield">
-    <physics name="4ms" type="ignored">
-      <max_step_size>0.004</max_step_size>
+    <!-- Finer physics step (2ms) for more stable multicopter dynamics; reduces flip/crash. -->
+    <physics name="2ms" type="ode">
+      <max_step_size>0.002</max_step_size>
       <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>500</real_time_update_rate>
     </physics>
 
     <gui fullscreen='0'>
@@ -13,10 +17,15 @@
         <projection_type>orthographic</projection_type>
       </camera>
     </gui>
-  
 
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics" />
     <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands" />
+    <!-- PX4 SITL sensors (IMU / barometer / GPS) require these system plugins. -->
+    <plugin filename="gz-sim-contact-system" name="gz::sim::systems::Contact" />
+    <plugin filename="gz-sim-imu-system" name="gz::sim::systems::Imu" />
+    <plugin filename="gz-sim-air-pressure-system" name="gz::sim::systems::AirPressure" />
+    <plugin filename="gz-sim-apply-link-wrench-system" name="gz::sim::systems::ApplyLinkWrench" />
+    <plugin filename="gz-sim-navsat-system" name="gz::sim::systems::NavSat" />
     <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors"><render_engine>ogre2</render_engine></plugin>
     <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster" />
 
@@ -54,6 +63,18 @@
       </link>
     </model>
 
+    <!-- Spawn zone: blue start area (y=-10 to -4, x=-10 to 10). Used by spawn_selector for default spawns. -->
+    <model name="spawn_zone">
+      <static>true</static>
+      <pose>0 -7 0 0 0 0</pose>
+      <link name="link">
+        <visual name="visual">
+          <geometry><plane><normal>0 0 1</normal><size>20 6</size></plane></geometry>
+          <material><ambient>0 0 0 0</ambient><diffuse>0 0 0 0</diffuse></material>
+        </visual>
+      </link>
+    </model>
+
     <model name="wall_n"><static>true</static><pose>0 10 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>20.4 0.4 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>20.4 0.4 1.5</size></box></geometry><material><ambient>0.9 0.45 0.1 1</ambient><diffuse>0.9 0.45 0.1 1</diffuse></material></visual></link></model>
     <model name="wall_s"><static>true</static><pose>0 -10 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>20.4 0.4 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>20.4 0.4 1.5</size></box></geometry><material><ambient>0.9 0.45 0.1 1</ambient><diffuse>0.9 0.45 0.1 1</diffuse></material></visual></link></model>
     <model name="wall_e"><static>true</static><pose>10 0 0.75 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>0.4 20.4 1.5</size></box></geometry></collision><visual name="v"><geometry><box><size>0.4 20.4 1.5</size></box></geometry><material><ambient>0.9 0.45 0.1 1</ambient><diffuse>0.9 0.45 0.1 1</diffuse></material></visual></link></model>
@@ -84,19 +105,9 @@
     <model name="inner_8_3"><static>true</static><pose>6 2 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>2 0.2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>2 0.2 2</size></box></geometry><material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual></link></model>
     <model name="inner_8_4"><static>true</static><pose>7 1 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>0.2 2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>0.2 2 2</size></box></geometry><material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual></link></model>
 
-    <!-- <model name="unknown_area_boundary_s"><static>true</static><pose>0 -4 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>10.2 0.2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>10.2 0.2 2</size></box></geometry><material><ambient>0.8 0.6 0 1</ambient><diffuse>0.8 0.6 0 1</diffuse></material></visual></link></model>
-    <model name="unknown_area_boundary_n"><static>true</static><pose>0 6 1 0 0 0</pose><link name="l"><collision name="c"><geometry><box><size>6 0.2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>6 0.2 2</size></box></geometry><material><ambient>0.8 0.6 0 1</ambient><diffuse>0.8 0.6 0 1</diffuse></material></visual></link></model>
-
+    <!-- unknown_area_boundary_s, unknown_area_boundary_n models commented out -->
     <model name="inner_r_1"><static>true</static><pose>7.5 0 1 0 0 1.57</pose><link name="l"><collision name="c"><geometry><box><size>5 0.2 2</size></box></geometry></collision><visual name="v"><geometry><box><size>5 0.2 2</size></box></geometry><material><ambient>0.2 0.2 0.2 1</ambient><diffuse>0.2 0.2 0.2 1</diffuse></material></visual></link></model>
-    
-    <model name="pillar_sample"><static>true</static><pose>4 8 0 0 0 0</pose><link name="l">
-      <collision name="c"><pose>0 0 1 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>2</length></cylinder></geometry></collision>
-      <visual name="v"><pose>0 0 1 0 0 0</pose><geometry><cylinder><radius>0.15</radius><length>2</length></cylinder></geometry><material><ambient>0.5 0.4 0.3 1</ambient><diffuse>0.5 0.4 0.3 1</diffuse></material></visual>
-      <collision name="b"><pose>0 0 0.075 0 0 0</pose><geometry><cylinder><radius>0.25</radius><length>0.15</length></cylinder></geometry></collision>
-      <visual name="bv"><pose>0 0 0.075 0 0 0</pose><geometry><cylinder><radius>0.25</radius><length>0.15</length></cylinder></geometry><material><ambient>0.3 0.3 0.3 1</ambient><diffuse>0.3 0.3 0.3 1</diffuse></material></visual>
-    </link></model> -->
 
-    <include><uri>model://rex_quadcopter</uri><name>robot</name><pose>-8 -8 0.05 0 0 0</pose></include>
-    <include><uri>model://rex_quadcopter_2</uri><name>robot2</name><pose>-4 -8 0.05 0 0 0</pose></include>
+    <!-- Drones spawned by PX4 SITL via px4_swarm_fast.launch.py -->
   </world>
 </sdf>

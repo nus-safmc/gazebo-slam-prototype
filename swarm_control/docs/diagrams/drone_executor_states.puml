@@ -1,0 +1,86 @@
+@startuml Drone Executor State Machine
+!theme cerulean
+
+title DroneExecutor Finite State Machine (Nav2 Integration)
+
+[*] --> BOOT : System startup
+
+BOOT --> PREFLIGHT : Nav2 server ready
+BOOT --> EMERGENCY : 60s timeout\n(Nav2 not available)
+BOOT --> BOOT : Waiting for\nNavigateToPose server...
+
+PREFLIGHT --> ARMED : TF checks passed
+PREFLIGHT --> PREFLIGHT : Running checks...
+
+ARMED --> TAKING_OFF : Takeoff command
+ARMED --> ARMED : Waiting...
+
+TAKING_OFF --> STAGING : Direct transition\n(skipped in simulation)
+
+STAGING --> AVAILABLE : Mission running
+STAGING --> STAGING : Waiting for mission
+
+AVAILABLE --> EXECUTING_GOAL : Assignment received\n(robot_id:frontier_id:cx:cy)
+AVAILABLE --> AVAILABLE : Waiting for goals
+
+EXECUTING_GOAL --> AVAILABLE : Nav2 goal succeeded
+EXECUTING_GOAL --> RECOVERY : Nav2 goal failed/aborted
+EXECUTING_GOAL --> EXECUTING_GOAL : Navigating via Nav2...
+
+RECOVERY --> EXECUTING_GOAL : Retry navigation
+RECOVERY --> EMERGENCY : Too many failures
+RECOVERY --> AVAILABLE : Recovery timeout\n(become available)
+RECOVERY --> RECOVERY : Attempting recovery...
+
+AVAILABLE --> RETURNING : Mission end
+EXECUTING_GOAL --> RETURNING : Mission end
+
+RETURNING --> LANDING : Return goal reached
+RETURNING --> RETURNING : Returning home...
+
+LANDING --> LANDED : Landing complete
+LANDING --> LANDING : Descending...
+
+LANDED --> [*] : Mission complete
+
+EMERGENCY --> [*] : Emergency shutdown
+
+' Critical emergency transitions
+BOOT --> EMERGENCY : Nav2 timeout (60s)
+
+note right of BOOT
+    Wait for Nav2
+    NavigateToPose
+    action server
+    (60s timeout)
+end note
+
+note right of TAKING_OFF
+    Skipped in simulation
+    Direct to STAGING
+end note
+
+note right of AVAILABLE : **Key State**
+    Ready for exploration
+    Parses assignment format:
+    robot_id:frontier_id:cx:cy
+end note
+
+note right of EXECUTING_GOAL
+    Sends NavigateToPose
+    goal to Nav2 with
+    computed yaw toward target
+end note
+
+note right of RECOVERY
+    Handle Nav2 failures
+    Retry or give up
+end note
+
+note right of EMERGENCY
+    Safety mode
+    Cancels active Nav2 goal
+    on node shutdown
+end note
+
+@enduml

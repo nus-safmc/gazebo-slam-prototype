@@ -11,6 +11,7 @@ export RMW_IMPLEMENTATION="rmw_cyclonedds_cpp"
 
 # Increase CycloneDDS participant index range for multi-robot Nav2 launches.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export CYCLONEDDS_URI="file://${SCRIPT_DIR}/cyclonedds.xml"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export CYCLONEDDS_URI="file://${PROJECT_ROOT}/scripts/px4/cyclonedds.xml"
 
 echo "ROS 2 DDS configured: RMW_IMPLEMENTATION=$RMW_IMPLEMENTATION"

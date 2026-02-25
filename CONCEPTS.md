@@ -1,0 +1,407 @@
+# Gazebo SLAM Prototype — Concepts & How It Fits Together
+
+This repo is a ROS 2 + Gazebo simulation stack for fast 2D mapping and multi‑robot exploration using a quadcopter model instrumented with 8 simulated ToF sensors.
+
+It contains two “tracks”:
+
+- **PX4 SITL track** (more realistic autopilot integration; runs `PX4-Autopilot/` SITL).
+- **🚨 DEPRECATED: Fast prototyping track** (lightweight `rex_quadcopter` model + ROS navigation/mapping tools; supports swarm runs up to 15 drones).
+
+⚠️ **The fast prototyping track is DEPRECATED.** All new development focuses on the PX4 SITL track. The rest of this document describes both tracks, with the deprecated fast prototyping track clearly marked.
+
+## PX4 SITL Track (Single Drone)
+
+If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of the lightweight `cmd_vel` model:
+
+- Requires `MicroXRCEAgent` (PX4 uXRCE-DDS agent). If `pixi run -e jazzy px4_sitl` errors, install it (e.g. `sudo apt install micro-xrce-dds-agent`).
+- External vision aiding: `gz_pose_info_to_pose_stamped` publishes `/model/x500_small_tof_0/pose` from Gazebo `/world/<world>/dynamic_pose/info`, and `pose_to_px4_visual_odometry` feeds PX4 `/fmu/in/vehicle_visual_odometry`.
+- PX4 + Gazebo + ToF → merged scan: `pixi run -e jazzy px4_sitl`
+- PX4 + SLAM Toolbox: `pixi run -e jazzy px4_sitl_slam`
+- PX4 + SLAM + Nav2 frontier exploration (PX4 offboard): `pixi run -e jazzy px4_nav2_explore`
+- To capture a full terminal log while still seeing it live: `pixi run -e jazzy px4_nav2_explore_log` (writes to `log/run_logs/`; headless by design).
+- To launch **Gazebo GUI + RViz** and capture logs: `pixi run -e jazzy px4_nav2_explore_playfield_full_log` (recommended) or `pixi run -e jazzy px4_nav2_explore_full_log`.
+- Expect ~20–30s for PX4 preflight → arm → takeoff; watch for `Ready for takeoff!`, `Armed by external command`, `Takeoff detected`.
+- Spawn pose is configurable via `px4_model_pose:=x,y,z,roll,pitch,yaw` (default `0,-2,0.2,0,0,0` to avoid the playfield's central pillar at the origin).
+- Altitude safety: `target_alt_m` is clamped to `max_alt_fraction * max_alt_m` (defaults: `0.6 * 2.0 = 1.2m`).
+- Exploration bounds: `arena_*` is **auto-inferred from the world SDF** (perimeter walls / ground plane). If you resize the playfield, the explorer will follow without needing hard-coded edits.
+- RViz map size note: `/map` grows as the drone explores; it won’t immediately show the full playfield extents until the vehicle has visited / scanned those areas.
+- To tail the latest log: `pixi run -e jazzy tail_log -- px4_nav2_explore` (or `pixi run -e jazzy tail_log -- px4_nav2_explore_playfield_full`)
+  - PX4 track world defaults to `world:=playfield_px4_sparse.sdf` (~40×40 m, PX4-only; avoids spawning the legacy `rex_quadcopter`).
+  - The older `playfield_sparse.sdf` / `playfield.sdf` worlds are fast-track oriented and include `rex_quadcopter` models, so they will spawn an extra drone if used with PX4.
+  - RViz scan tip: `/scan_merged` is the SLAM/Nav2 scan. For PX4, “no return” beams are published as a finite threshold (~4.05m) so slam_toolbox (Karto) can clear free space; `/scan_merged_viz` fills any remaining `inf` with `range_max` for display.
+  - To switch SLAM profile: `pixi run -e jazzy px4_nav2_explore slam_config:=slam_toolbox_px4_fast.yaml` (or `slam_toolbox_px4_robust.yaml`).
+
+---
+
+## Simulation to Hardware Architecture
+
+This section explains how the PX4 SITL simulation architecture translates to real-world drone deployment, ensuring contributors understand the development workflow.
+
+### Core Principle: Same Software Stack, Different Transport
+
+The architecture is designed so your ROS 2 SLAM stack runs identically in simulation and on real hardware. The only difference is the **transport layer** between ROS 2 and PX4.
+
+```
+SIMULATION (Your Development Environment)     REAL DRONE (Production Deployment)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PX4 SITL Process (Software)                   PX4 Flight Controller (Hardware)
+├── Runs on your computer                     ├── Runs on drone's FC board (e.g., Pixhawk)
+├── Gazebo physics simulation                 ├── Real sensors & motors
+├── UDP localhost:8888 communication          ├── Serial/USB/WiFi telemetry link
+├── Perfect environmental conditions          ├── Real-world physics & disturbances
+└── Deterministic behavior                    └── Stochastic real-world behavior
+
+MicroXRCEAgent (Communication Bridge - Same in Both!)
+├── Simulation: udp4 -p 8888                  ├── Hardware: serial -d /dev/ttyACM0 -b 921600
+├── DDS-XRCE protocol (unchanged)             ├── DDS-XRCE protocol (unchanged)
+├── ROS 2 ↔ PX4 message translation           ├── ROS 2 ↔ PX4 message translation
+└── Same px4_msgs message definitions         └── Same px4_msgs message definitions
+
+Your ROS 2 SLAM Stack (100% Unchanged!)
+├── tof8x8_to_scan.py (sensor processing)     ├── tof8x8_to_scan.py (sensor processing)
+├── scan_merger.py (360° scan fusion)         ├── scan_merger.py (360° scan fusion)
+├── slam_toolbox (mapping)                    ├── slam_toolbox (mapping)
+├── nav2_explore (autonomous navigation)      ├── nav2_explore (autonomous navigation)
+└── Same topics, same algorithms              └── Same topics, same algorithms
+```
+
+### Transport Layer Details
+
+#### Simulation Transport (UDP)
+```bash
+# In launch files (px4_sitl.launch.py, px4_swarm_fast.launch.py)
+MicroXRCEAgent udp4 -p 8888 -v 2
+```
+- **Protocol**: UDP over localhost
+- **Port**: 8888 (PX4 default)
+- **Reliability**: Perfect (no packet loss on localhost)
+- **Latency**: Minimal (~0.1ms)
+
+#### Hardware Transport Options
+```bash
+# USB Serial (most common for development)
+MicroXRCEAgent serial -d /dev/ttyACM0 -b 921600
+
+# UART Serial (direct flight controller connection)
+MicroXRCEAgent serial -d /dev/ttyS3 -b 57600
+
+# WiFi/Telemetry (wireless deployment)
+MicroXRCEAgent udp4 -p 8888  # (different IP/port for remote drone)
+```
+
+### Development Workflow
+
+1. **Develop & Test in SITL**
+   - Perfect environment for algorithm development
+   - Fast iteration cycles
+   - Deterministic behavior for debugging
+   - `pixi run -e jazzy px4_sitl_slam` → `pixi run -e jazzy px4_nav2_explore`
+
+2. **Hardware-in-Loop (HITL) Testing** (Optional)
+   - Real PX4 flight controller + simulated sensors
+   - Validates flight control integration
+   - Tests real-time performance constraints
+
+3. **Real Hardware Deployment**
+   - Change MicroXRCEAgent transport from UDP to serial
+   - Deploy same ROS 2 nodes to companion computer
+   - Add hardware-specific configurations (calibration, failsafes)
+
+### Key Architectural Benefits
+
+#### **Abstraction Through PX4 Messages**
+Your code never talks directly to hardware - it uses standardized `px4_msgs`:
+- `VehicleOdometry` - Position/velocity estimates
+- `VehicleStatus` - Flight mode, arming state
+- `TrajectorySetpoint` - Navigation commands
+- `OffboardControlMode` - Control authority requests
+
+#### **ROS 2 Middleware Isolation**
+- CycloneDDS handles all message routing
+- Transport failures are abstracted away
+- Quality-of-Service settings ensure reliability
+- Same API regardless of transport (UDP/serial/WiFi)
+
+#### **Zero Code Changes for Deployment**
+When moving from simulation to hardware:
+- ✅ Rebuild PX4 firmware (if needed)
+- ✅ Change MicroXRCEAgent command-line arguments
+- ❌ No changes to your SLAM algorithms
+- ❌ No changes to ROS 2 node logic
+- ❌ No changes to topic names or message types
+
+### PX4 Integration Points
+
+The system integrates with PX4 at these key points:
+
+1. **Visual Odometry** (`pose_to_px4_visual_odometry`)
+   - Gazebo pose → PX4 `/fmu/in/vehicle_visual_odometry`
+   - Helps PX4 EKF2 fuse vision + IMU data
+
+2. **Offboard Control** (`twist_to_px4_offboard`)
+   - ROS navigation commands → PX4 trajectory setpoints
+   - Enables autonomous flight control
+
+3. **Vehicle State** (`px4_vehicle_odometry_to_odom`)
+   - PX4 estimates → ROS odometry for SLAM
+   - Provides ground truth for mapping validation
+
+### Contributing Guidelines
+
+When contributing to this codebase:
+
+1. **Test in SITL First**: All features must work in simulation
+2. **Transport Agnostic**: Never hardcode transport-specific logic
+3. **Message-Based Design**: Use px4_msgs, not direct hardware access
+4. **Deployment Ready**: Code should run unchanged on real hardware
+
+This architecture ensures your contributions have a clear path from simulation to real-world deployment, maximizing the impact of development efforts.
+
+---
+
+## 🚨 DEPRECATED: Lightweight rex_quadcopter Track
+
+**⚠️ The lightweight `rex_quadcopter` model is DEPRECATED and will be removed in a future version. All development is now focused on the PX4 SITL track for realistic autopilot integration.**
+
+### What Still Uses rex_quadcopter (Dependencies to Deprecate)
+
+**Launch Files (Deprecated):**
+- `tof_slam_sim/launch/sim_with_bridge.launch.py` - Uses rex_quadcopter models
+- `tof_slam_sim/launch/swarm_fast.launch.py` - Uses rex_quadcopter models
+
+**Scripts (Deprecated):**
+- `scripts/run_swarm_fast.sh` → calls deprecated `swarm_fast.launch.py`
+- `pixi.toml` tasks:
+  - `swarm_fast = "bash scripts/run_swarm_fast.sh"`
+  - `old_sim = "ros2 launch tof_slam_sim sim_with_bridge.launch.py"`
+
+**World Files (Contain rex_quadcopter includes):**
+- `tof_slam_sim/worlds/playfield_sparse.sdf`
+- `tof_slam_sim/worlds/playfield_swarm.sdf`
+- `tof_slam_sim/worlds/playfield.sdf`
+- `tof_slam_sim/worlds/playfield_competition.sdf`
+
+**Code References:**
+- `tof_slam_sim/tof_slam_sim/spawn_selector.py` - Logic to spawn rex_quadcopter models
+- `tof_slam_sim/tof_slam_sim/scan_merger.py` - Comments reference rex_quadcopter ring offsets
+- `tof_slam_sim/config/slam_toolbox.yaml` - Comments reference rex_quadcopter sensor ranges
+
+### Migration Path
+
+**Immediate Actions:**
+1. Mark all rex_quadcopter components as deprecated with clear warnings
+2. Update documentation to direct users to PX4 equivalents
+3. Add deprecation warnings in launch files and scripts
+
+**Future Removal:**
+- Remove rex_quadcopter model spawning logic from `spawn_selector.py`
+- Delete deprecated launch files and scripts
+- Remove rex_quadcopter references from configuration files
+- Update world files to remove rex_quadcopter includes
+
+**Current Usage (Verify Before Deprecating):**
+- `pixi run -e jazzy old_sim` - single robot with rex_quadcopter
+- `pixi run -e jazzy swarm_fast -- --num-drones N` - swarm with rex_quadcopter models
+- Any direct calls to `sim_with_bridge.launch.py` or `swarm_fast.launch.py`
+
+---
+
+## What’s Used
+
+**Environment / build**
+- **Pixi + RoboStack**: reproducible ROS 2 environments (`pixi.toml`).
+- **ROS 2 Jazzy**: middleware + tooling (`rclpy`, `nav2_*`, `slam_toolbox`, `rviz2`).
+
+**Simulation**
+- **Gazebo Harmonic** (`gz sim`): physics + sensors + world.
+- **ros_gz_bridge** (`parameter_bridge`): bridges Gazebo topics ↔ ROS topics.
+
+**Mapping & exploration**
+- **8× ToF ring**: simulated as 8 short‑range scan sensors around the drone.
+- **`scan_merger`**: merges 8 directional scans into a single 360° `/scan_merged`.
+- **`swarm_map_fuser`**: builds a global `/map` by ray‑tracing robot scans using (sim) odometry/TF.
+- **Nav2** (`nav2_bringup`): local + global planning on the fused map.
+- **`nav2_frontier_explorer`**: picks frontier goals and drives Nav2 using `NavigateToPose`.
+- **`auto_pilot` (explore mode)**: lighter alternative to Nav2 for large swarms.
+
+**UIs**
+- **Spawn selector UI**: click to place each robot; writes a temporary world SDF for Gazebo.
+- **Health dashboard UI**: runtime status + publishes RViz markers for robot positions.
+
+---
+
+## 🚨 DEPRECATED: Core Ideas / Architecture (Fast Prototyping Track)
+
+### 1) World + robot models
+
+- Worlds are SDF files under `tof_slam_sim/worlds/`:
+  - `playfield_sparse.sdf`: open arena (good for single robot / quick tests).
+  - `playfield_swarm.sdf`: swarm‑friendly arena layout + default robot includes.
+  - World size is currently **~40×40 m** (ground plane size is `40 40`).
+
+- Robots are Gazebo models under `tof_slam_sim/models/`:
+  - `rex_quadcopter`: base model (robot “1”).
+  - `rex_quadcopter_2 … rex_quadcopter_15`: variants with unique `cmd_vel` topics + TF frame IDs so multiple robots don’t collide on topics/frames.
+
+### 2) Gazebo ↔ ROS bridging
+
+`tof_slam_sim/launch/sim_with_bridge.launch.py`:
+- Starts Gazebo (`gz sim`) with the chosen world.
+- Generates a YAML bridge config at runtime for a list of robots (e.g. `robot,robot2,...`).
+- Starts a single `ros_gz_bridge parameter_bridge` process that bridges:
+  - `/clock` (Gazebo → ROS)
+  - `/model/<robot>/odometry` (Gazebo → ROS `/odom` or `/<robot>/odom`)
+  - the 8 sensor scan topics (Gazebo → ROS `/<robot>/scan/<sensor>`)
+  - `cmd_vel` (ROS → Gazebo; per‑robot `cmd_vel` topics map to per‑robot Gazebo topics)
+
+### 3) Sensor pipeline (8 ToF sensors → one 360° scan)
+
+Each robot publishes 8 scan topics (one per sensor):
+- `/<robot>/scan/front`
+- `/<robot>/scan/front_right`
+- `/<robot>/scan/right`
+- … etc
+
+`tof_slam_sim/tof_slam_sim/scan_merger.py` merges these into:
+- `/scan_merged` for `robot`
+- `/<robotN>/scan_merged` for others
+
+### 4) Swarm mapping (fast global map fusion)
+
+`tof_slam_sim/tof_slam_sim/swarm_map_fuser.py` creates a single global occupancy grid:
+- Subscribes to each robot’s `scan_merged`
+- Uses TF (`robot/map` → `<robot>/base_footprint`) to ray‑trace beams
+- Publishes:
+  - `/map` (OccupancyGrid)
+  - `/map_updates` (OccupancyGridUpdate)
+
+This is **not SLAM**: it assumes simulated odometry/TF is accurate enough and prioritizes speed + stability for multi‑robot runs.
+
+### 5) Exploration / navigation
+
+`tof_slam_sim/launch/swarm_fast.launch.py` can run either:
+
+- **Nav2 mode**:
+  - Starts a Nav2 stack per robot (namespaced) using `nav2_bringup`
+  - Starts `nav2_frontier_explorer` per robot to generate goals
+
+- **Autopilot mode**:
+  - Runs the repo’s `auto_pilot` node per robot (lighter; good for many drones)
+
+Both modes enforce arena bounds so robots don’t “plan” into unknown space outside the perimeter.
+
+### 6) Runtime monitoring + RViz robot locations
+
+`tof_slam_sim/tof_slam_sim/drone_health_dashboard.py`:
+- Subscribes to `/<robot>/odom`, `/<robot>/cmd_vel`, and `/<robot>/scan_merged`
+- Classifies each robot as:
+  - `MOVING`, `STATIONARY`, `STUCK`, `CRASHED`, `NO_ODOM`
+- Publishes RViz markers:
+  - `/swarm/drone_markers` (MarkerArray: arrows + labels + trails)
+  - `/swarm/drone_poses` (PoseArray: simple pose list)
+
+The default RViz config (`tof_slam_sim/config/slam.rviz`) includes a `MarkerArray` display for `/swarm/drone_markers`.
+
+---
+
+## 🚨 DEPRECATED: How To Run (Fast Track)
+
+### Build
+
+```bash
+pixi run -e jazzy build
+```
+
+### Clean up stuck Gazebo / bridge processes
+
+```bash
+pixi run -e jazzy cleanup_sim
+```
+
+### Swarm run (recommended entry point)
+
+Spawn UI (click placements):
+
+```bash
+pixi run -e jazzy swarm_fast -- --num-drones 6
+```
+
+Skip UI and use default spawns:
+
+```bash
+pixi run -e jazzy swarm_fast -- --default --num-drones 6
+```
+
+Equivalent direct launch (no wrapper):
+
+```bash
+ros2 launch tof_slam_sim swarm_fast.launch.py num_robots:=6 default_spawn:=true
+```
+
+Useful launch flags:
+- `health_ui:=false` (disable the Tk dashboard window)
+- `publish_drone_markers:=false` (disable RViz marker publishing)
+- `rviz:=false` (don’t start RViz)
+- `run_autopilot:=true run_nav2:=false run_explorer:=false` (lighter exploration for big swarms)
+
+### PX4 swarm run (PX4 SITL)
+
+This is the **PX4 SITL** version of the swarm stack (each robot is a PX4 instance via uXRCE-DDS).
+
+Spawn 5 drones with the spawn UI (default):
+
+```bash
+pixi run -e jazzy px4_swarm_fast
+```
+
+Spawn UI + show both Gazebo GUI and RViz:
+
+```bash
+pixi run -e jazzy px4_swarm_fast_view
+```
+
+Same as above but also write logs (and filter the CycloneDDS type-hash spam):
+
+```bash
+pixi run -e jazzy px4_swarm_fast_view_log
+```
+
+Change drone count:
+
+```bash
+pixi run -e jazzy px4_swarm_fast -- --num-drones 8
+```
+
+Notes:
+- Default world is `tof_slam_sim/worlds/playfield_px4_sparse_annex.sdf` (includes a connected annex room).
+- The annex is explorable but not spawnable (spawn UI restricts placements to the main field).
+- `/map` is not published until sensor data arrives (RViz won’t show a pre-sized map at startup).
+
+### Single robot run
+
+```bash
+pixi run -e jazzy old_sim
+```
+
+Or directly:
+
+```bash
+ros2 launch tof_slam_sim sim_with_bridge.launch.py world:=playfield_sparse.sdf robots:=robot
+```
+
+---
+
+## 🚨 DEPRECATED: Where To Look in the Code (Fast Track Components)
+
+- Launch:
+  - `tof_slam_sim/launch/sim_with_bridge.launch.py` (Gazebo + bridge)
+  - `tof_slam_sim/launch/swarm_fast.launch.py` (swarm stack: spawn UI, mergers, fuser, Nav2/autopilot, RViz)
+- Core nodes:
+  - `tof_slam_sim/tof_slam_sim/scan_merger.py`
+  - `tof_slam_sim/tof_slam_sim/swarm_map_fuser.py`
+  - `tof_slam_sim/tof_slam_sim/nav2_frontier_explorer.py`
+  - `tof_slam_sim/tof_slam_sim/auto_pilot_node.py`
+  - `tof_slam_sim/tof_slam_sim/drone_health_dashboard.py`
+- Worlds / models:
+  - `tof_slam_sim/worlds/`
+  - `tof_slam_sim/models/`
