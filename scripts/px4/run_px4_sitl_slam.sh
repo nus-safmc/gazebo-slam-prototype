@@ -19,4 +19,4 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 bash "$SCRIPT_DIR/../core/cleanup_sim.sh"
 bash "$SCRIPT_DIR/check_microxrce_agent.sh"
 
-exec ros2 launch tof_slam_sim px4_sitl_slam.launch.py ${ARGS[@]+"${ARGS[@]}"}
+exec ros2 launch tof_slam_sim px4_sitl_slam.launch.py gz_gui:=true ${ARGS[@]+"${ARGS[@]}"}

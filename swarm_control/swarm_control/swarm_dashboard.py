@@ -384,7 +384,11 @@ def main(args=None):
     spin_thread = threading.Thread(target=executor.spin, daemon=True)
     spin_thread.start()
 
-    server = HTTPServer((host, port), _Handler)
+    class _ReusableHTTPServer(HTTPServer):
+        allow_reuse_address = True
+        allow_reuse_port = True
+
+    server = _ReusableHTTPServer((host, port), _Handler)
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 

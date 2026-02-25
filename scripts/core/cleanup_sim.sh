@@ -9,6 +9,7 @@ echo "[cleanup] Stopping stray Gazebo / bridge processes..."
 # Stop any lingering top-level launch processes from this repo first.
 # If these stay alive, they may respawn nodes after we pkill them below.
 pkill -f '^[r]os2 launch tof_slam_sim' 2>/dev/null || true
+pkill -f '^[r]os2 launch swarm_control' 2>/dev/null || true
 
 # Any Gazebo sim instance (common cause of multiple /clock publishers).
 # Gazebo can be stubborn to terminate; send SIGINT, then SIGTERM, then SIGKILL.
@@ -29,13 +30,23 @@ pkill -f '/model/x500_small_tof_0/pose@geometry_msgs/msg/PoseStamped@gz\.msgs\.P
 # PX4 SITL binary instances (can leave lock files that block the next run).
 pkill -f '[b]in/px4 -i' 2>/dev/null || true
 pkill -f 'px4_sitl_default/bin/px4' 2>/dev/null || true
+sleep 0.3
+# Force-kill any stubborn PX4 instances.
+pkill -KILL -f '[b]in/px4 -i' 2>/dev/null || true
+pkill -KILL -f 'px4_sitl_default/bin/px4' 2>/dev/null || true
+# Remove PX4 lock files so the next run doesn't see "already running".
+rm -f /tmp/px4_lock_* 2>/dev/null || true
+rm -f /tmp/px4-*lock* 2>/dev/null || true
 
 # PX4 uXRCE agent (safe to stop when resetting sim state)
 pkill -f '[M]icroXRCEAgent udp4 -p 8888' 2>/dev/null || true
 
+# Kill anything holding port 8080 (swarm_dashboard web server).
+lsof -ti :8080 2>/dev/null | xargs kill -9 2>/dev/null || true
+
 # Kill ROS nodes that frequently outlive Gazebo (and then see /clock jump backwards).
 pkill -f '[s]lam_toolbox/sync_slam_toolbox_node' 2>/dev/null || true
-pkill -f '[r]viz2/rviz2.*tof_slam_sim/config/slam\\.rviz' 2>/dev/null || true
+pkill -f '[r]viz2/rviz2' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/auto_pilot' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/scan_merger' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/topic_monitor' 2>/dev/null || true
@@ -62,6 +73,18 @@ pkill -f '[o]pennav_docking/opennav_docking' 2>/dev/null || true
 # Also stop bringup launch processes if they are still around.
 pkill -f 'nav2_.*\\.launch\\.py' 2>/dev/null || true
 
+# swarm_control nodes (centralized swarm FSM + web dashboard).
+pkill -f '[s]warm_control/frontier_server' 2>/dev/null || true
+pkill -f '[s]warm_control/goal_allocator' 2>/dev/null || true
+pkill -f '[s]warm_control/mission_supervisor' 2>/dev/null || true
+pkill -f '[s]warm_control/traffic_manager' 2>/dev/null || true
+pkill -f '[s]warm_control/swarm_dashboard' 2>/dev/null || true
+pkill -f '[s]warm_control/drone_executor' 2>/dev/null || true
+pkill -f '[s]warm_control\\.frontier_server' 2>/dev/null || true
+pkill -f '[s]warm_control\\.goal_allocator' 2>/dev/null || true
+pkill -f '[s]warm_control\\.drone_executor' 2>/dev/null || true
+pkill -f '[s]warm_control\\.swarm_dashboard' 2>/dev/null || true
+
 # Multi-robot helpers / mapping utilities.
 pkill -f '[t]of_slam_sim/odom_tf_publisher' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/swarm_tf_broadcaster' 2>/dev/null || true
@@ -69,6 +92,11 @@ pkill -f '[t]of_slam_sim\\.swarm_tf_broadcaster' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/swarm_map_fuser' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/tf_namespace_relay' 2>/dev/null || true
 pkill -f '[t]of_slam_sim/cmd_vel_relay' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/drone_health_dashboard' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/twist_to_px4_offboard' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/px4_vehicle_odometry_to_odom' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/gz_pose_info_to_pose_stamped' 2>/dev/null || true
+pkill -f '[t]of_slam_sim/pose_to_px4_visual_odometry' 2>/dev/null || true
 
 # The ROS 2 daemon can cache stale graph info (publisher counts, etc.)
 ros2 daemon stop >/dev/null 2>&1 || true

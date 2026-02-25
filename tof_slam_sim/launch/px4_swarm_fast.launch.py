@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import os
+import tempfile
+import time
 from typing import Optional
 
 from ament_index_python.packages import get_package_share_directory
@@ -9,13 +11,16 @@ from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     ExecuteProcess,
+    IncludeLaunchDescription,
     OpaqueFunction,
     SetEnvironmentVariable,
     TimerAction,
 )
 from launch.conditions import IfCondition
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import EnvironmentVariable, LaunchConfiguration, PathJoinSubstitution, PythonExpression
-from launch_ros.actions import Node
+from launch.actions import GroupAction as _GroupAction
+from launch_ros.actions import Node, PushRosNamespace
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -157,11 +162,31 @@ def _select_spawns(*, world_sdf_path: str, robots: list[str], default_spawn: boo
     return spawns
 
 
+def _write_nav2_params(*, base_path: str, robot: str) -> str:
+    """Generate a per-robot Nav2 params YAML with correct TF frame names."""
+    with open(base_path, 'r', encoding='utf-8') as f:
+        text = f.read()
+
+    if robot != 'robot':
+        text = text.replace('robot/odom', f'{robot}/odom')
+        text = text.replace('robot/base_footprint', f'{robot}/base_footprint')
+        text = text.replace('robot/base_link', f'{robot}/base_link')
+
+    stamp = int(time.time() * 1000)
+    out_path = os.path.join(
+        tempfile.gettempdir(), f'nav2_{robot}_{os.getpid()}_{stamp}.yaml'
+    )
+    with open(out_path, 'w', encoding='utf-8') as f:
+        f.write(text)
+    return out_path
+
+
 def _build_swarm(context):
     robots = _parse_robots(context)
     world_path = _resolve_world_path(context)
 
     use_sim_time = _truthy(LaunchConfiguration('use_sim_time').perform(context))
+    nav_mode_val = str(LaunchConfiguration('nav_mode').perform(context)).strip().lower()
     gz_world_name = LaunchConfiguration('gz_world_name')
     gz_world_value = str(gz_world_name.perform(context)).strip() or 'default'
     px4_dir = str(LaunchConfiguration('px4_dir').perform(context)).strip() or _guess_px4_dir()
@@ -467,7 +492,10 @@ def _build_swarm(context):
         )
 
         # Exploration autopilot (one per robot).
-        if _truthy(LaunchConfiguration('run_autopilot').perform(context)):
+        # nav_mode takes priority: autopilot mode enables, nav2 mode disables.
+        run_autopilot = (nav_mode_val == 'autopilot') if nav_mode_val in ('nav2', 'autopilot') \
+            else _truthy(LaunchConfiguration('run_autopilot').perform(context))
+        if run_autopilot:
             per_robot_nodes.append(
                 Node(
                     package='tof_slam_sim',
@@ -571,7 +599,56 @@ def _build_swarm(context):
         condition=IfCondition(LaunchConfiguration('rviz')),
     )
 
-    return [
+    # Per-robot Nav2 stacks (launched when run_nav2:=true).
+    # Skip when nav2_launched_externally:=true (px4_test_swarm launches via TimerAction with stagger).
+    # Uses navigation_launch.py (NOT bringup_launch.py) because we provide
+    # our own TF / odometry and don't want AMCL localization.
+    nav2_launched_externally = _truthy(LaunchConfiguration('nav2_launched_externally').perform(context))
+    nav2_actions: list = []
+    if nav2_launched_externally:
+        run_nav2 = False  # Will be launched by px4_test_swarm
+    elif nav_mode_val == 'nav2':
+        run_nav2 = True
+    elif nav_mode_val == 'autopilot':
+        run_nav2 = False
+    else:
+        run_nav2 = _truthy(LaunchConfiguration('run_nav2').perform(context))
+    print(f'[px4_swarm_fast] nav_mode={nav_mode_val!r}  run_nav2={run_nav2}  run_autopilot={run_autopilot}')
+    if run_nav2:
+        nav2_launch_path = os.path.join(
+            get_package_share_directory('nav2_bringup'), 'launch', 'navigation_launch.py'
+        )
+        nav2_params_path = str(LaunchConfiguration('nav2_params').perform(context)).strip()
+        if not nav2_params_path or not os.path.isfile(nav2_params_path):
+            nav2_params_path = os.path.join(
+                get_package_share_directory('tof_slam_sim'), 'config', 'nav2_params_px4.yaml'
+            )
+
+        for r in robots:
+            ns = '' if r == 'robot' else r
+            robot_params = _write_nav2_params(base_path=nav2_params_path, robot=r)
+            nav2_include = IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(nav2_launch_path),
+                launch_arguments={
+                    'namespace': ns,
+                    'use_sim_time': 'true' if use_sim_time else 'false',
+                    'params_file': robot_params,
+                    'autostart': 'true',
+                    'use_composition': 'False',
+                    'use_respawn': 'False',
+                    'log_level': 'info',
+                }.items(),
+            )
+            if ns:
+                nav2_actions.append(
+                    _GroupAction(actions=[PushRosNamespace(ns), nav2_include])
+                )
+            else:
+                nav2_actions.append(nav2_include)
+
+    print(f'[px4_swarm_fast] Nav2: {len(nav2_actions)} stacks to launch directly')
+
+    result = [
         set_gz_resource_path,
         set_px4_rc_path,
         gz_sim,
@@ -584,7 +661,9 @@ def _build_swarm(context):
         health,
         *per_robot_nodes,
         rviz,
+        *nav2_actions,
     ]
+    return result
 
 
 def generate_launch_description() -> LaunchDescription:
@@ -703,6 +782,26 @@ def generate_launch_description() -> LaunchDescription:
         default_value='true',
         description='Publish drone pose markers for RViz (/swarm/drone_markers).',
     )
+    declare_nav_mode = DeclareLaunchArgument(
+        'nav_mode',
+        default_value='',
+        description='Navigation mode: "nav2" or "autopilot". When set, overrides run_nav2 / run_autopilot.',
+    )
+    declare_run_nav2 = DeclareLaunchArgument(
+        'run_nav2',
+        default_value='false',
+        description='Launch a Nav2 navigation stack per robot (for swarm_control drone_executor).',
+    )
+    declare_nav2_params = DeclareLaunchArgument(
+        'nav2_params',
+        default_value='',
+        description='Nav2 params YAML (defaults to tof_slam_sim/config/nav2_params_px4.yaml).',
+    )
+    declare_nav2_launched_externally = DeclareLaunchArgument(
+        'nav2_launched_externally',
+        default_value='false',
+        description='When true, skip launching Nav2 (used when px4_test_swarm launches it via TimerAction).',
+    )
 
     build_swarm = OpaqueFunction(function=_build_swarm)
 
@@ -730,5 +829,9 @@ def generate_launch_description() -> LaunchDescription:
     ld.add_action(declare_run_autopilot)
     ld.add_action(declare_health_ui)
     ld.add_action(declare_publish_markers)
+    ld.add_action(declare_nav_mode)
+    ld.add_action(declare_run_nav2)
+    ld.add_action(declare_nav2_params)
+    ld.add_action(declare_nav2_launched_externally)
     ld.add_action(build_swarm)
     return ld

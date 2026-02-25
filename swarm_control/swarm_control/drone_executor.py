@@ -202,8 +202,8 @@ class DroneExecutor(Node):
             return
 
         elapsed = self._elapsed_in_state()
-        if elapsed > 60.0:
-            self.get_logger().error('Nav2 not ready after 60 s, entering EMERGENCY')
+        if elapsed > 180.0:
+            self.get_logger().error('Nav2 not ready after 180 s, entering EMERGENCY')
             self._transition_to(DroneState.EMERGENCY)
 
     def _handle_preflight(self) -> None:
@@ -246,8 +246,8 @@ class DroneExecutor(Node):
     def _handle_recovery(self) -> None:
         if self._elapsed_in_state() > self.recovery_timeout:
             self.consecutive_failures += 1
-            if self.consecutive_failures >= 3:
-                self.get_logger().error('Too many failures, entering EMERGENCY')
+            if self.consecutive_failures >= 5:
+                self.get_logger().error('Too many consecutive failures, entering EMERGENCY')
                 self._transition_to(DroneState.EMERGENCY)
             else:
                 self.get_logger().info('Recovery done, returning to AVAILABLE')

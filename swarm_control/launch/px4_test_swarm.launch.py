@@ -26,9 +26,11 @@ Navigation mode
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
+    GroupAction,
     IncludeLaunchDescription,
     TimerAction,
 )
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.substitutions import FindPackageShare
@@ -39,6 +41,16 @@ def generate_launch_description():
         'num_robots',
         default_value='4',
         description='Number of PX4 drones to spawn.',
+    )
+    declare_robots = DeclareLaunchArgument(
+        'robots',
+        default_value='',
+        description='Comma-separated robot names (overrides num_robots when set).',
+    )
+    declare_default_spawn = DeclareLaunchArgument(
+        'default_spawn',
+        default_value='true',
+        description='Skip spawn UI and use default spawn points.',
     )
     declare_world = DeclareLaunchArgument(
         'world',
@@ -71,12 +83,6 @@ def generate_launch_description():
         description='Target hover altitude for PX4 drones (metres).',
     )
 
-    nav_mode = LaunchConfiguration('nav_mode')
-
-    # Determine infrastructure flags from nav_mode.
-    run_autopilot = PythonExpression(["'", nav_mode, "' == 'autopilot'"])
-    run_nav2 = PythonExpression(["'", nav_mode, "' == 'nav2'"])
-
     sim_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
@@ -87,11 +93,15 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'num_robots': LaunchConfiguration('num_robots'),
+            'robots': LaunchConfiguration('robots'),
+            'default_spawn': LaunchConfiguration('default_spawn'),
             'world': LaunchConfiguration('world'),
-            'default_spawn': 'true',
             'gz_gui': LaunchConfiguration('gz_gui'),
             'rviz': LaunchConfiguration('rviz'),
-            'run_autopilot': run_autopilot,
+            'nav_mode': LaunchConfiguration('nav_mode'),
+            'nav2_launched_externally': PythonExpression([
+                "'true' if '", LaunchConfiguration('nav_mode'), "' == 'nav2' else 'false'"
+            ]),
             'health_ui': 'false',
             'publish_drone_markers': 'false',
             'target_alt_m': LaunchConfiguration('target_alt_m'),
@@ -108,14 +118,41 @@ def generate_launch_description():
         ]),
         launch_arguments={
             'num_drones': LaunchConfiguration('num_robots'),
+            'robots': LaunchConfiguration('robots'),
             'dashboard': LaunchConfiguration('dashboard'),
         }.items(),
     )
 
-    delayed_swarm = TimerAction(period=12.0, actions=[swarm_launch])
+    delayed_swarm = TimerAction(period=60.0, actions=[swarm_launch])
+
+    # Nav2 stacks launched with 60s delay + staggered per-robot (avoids DDS storm).
+    # Only when nav_mode==nav2; px4_swarm_fast skips Nav2 via nav2_launched_externally.
+    nav2_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource([
+            PathJoinSubstitution([
+                FindPackageShare('tof_slam_sim'),
+                'launch',
+                'nav2_multi_robot.launch.py',
+            ])
+        ]),
+        launch_arguments={
+            'num_robots': LaunchConfiguration('num_robots'),
+            'robots': LaunchConfiguration('robots'),
+            'use_sim_time': 'true',
+        }.items(),
+    )
+    delayed_nav2 = TimerAction(period=60.0, actions=[nav2_launch])
+    delayed_nav2_cond = GroupAction(
+        condition=IfCondition(PythonExpression([
+            "'", LaunchConfiguration('nav_mode'), "' == 'nav2'"
+        ])),
+        actions=[delayed_nav2],
+    )
 
     return LaunchDescription([
         declare_num_robots,
+        declare_robots,
+        declare_default_spawn,
         declare_world,
         declare_dashboard,
         declare_rviz,
@@ -124,4 +161,5 @@ def generate_launch_description():
         declare_target_alt,
         sim_launch,
         delayed_swarm,
+        delayed_nav2_cond,
     ])

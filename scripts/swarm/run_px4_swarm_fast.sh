@@ -8,6 +8,7 @@ set -euo pipefail
 DEFAULT_SPAWN=0
 N_ROBOTS=""
 ROBOTS_CSV=""
+NAV_MODE="nav2"
 ARGS=()
 
 # Pixi commonly uses `--` to separate task args; tolerate it either way.
@@ -39,6 +40,15 @@ while [[ $# -gt 0 ]]; do
     shift
     continue
   fi
+  if [[ "$a" == "--nav-mode" ]]; then
+    if [[ $# -lt 1 ]]; then
+      echo "error: --nav-mode requires 'nav2' or 'autopilot'" >&2
+      exit 2
+    fi
+    NAV_MODE="$1"
+    shift
+    continue
+  fi
   ARGS+=("$a")
 done
 
@@ -65,8 +75,15 @@ elif [[ -n "$N_ROBOTS" ]]; then
   ROBOTS_ARG=("num_robots:=$N_ROBOTS")
 fi
 
+SPAWN_VAL="false"
 if [[ "$DEFAULT_SPAWN" -eq 1 ]]; then
-  exec ros2 launch tof_slam_sim px4_swarm_fast.launch.py default_spawn:=true ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} ${ARGS[@]+"${ARGS[@]}"}
-else
-  exec ros2 launch tof_slam_sim px4_swarm_fast.launch.py default_spawn:=false ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} ${ARGS[@]+"${ARGS[@]}"}
+  SPAWN_VAL="true"
 fi
+
+exec ros2 launch swarm_control px4_test_swarm.launch.py \
+  default_spawn:="$SPAWN_VAL" \
+  gz_gui:=true \
+  rviz:=true \
+  nav_mode:="$NAV_MODE" \
+  ${ROBOTS_ARG[@]+"${ROBOTS_ARG[@]}"} \
+  ${ARGS[@]+"${ARGS[@]}"}
