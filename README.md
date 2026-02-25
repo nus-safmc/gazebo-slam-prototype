@@ -1,6 +1,12 @@
 # Gazebo SLAM Prototype
 
-Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in the Loop (SITL)
+Run simulation of SAFMC drone with ring of 8 ToF sensors using PX4 Software in the Loop (SITL) for realistic autopilot integration that translates directly to real hardware deployment
+
+## Architecture Overview
+
+This project uses PX4 Software-In-The-Loop (SITL) simulation that provides **realistic autopilot integration**. Your ROS 2 SLAM stack runs identically in simulation and on real drones - the only difference is the transport layer (UDP in simulation, serial/USB on hardware).
+
+**Key insight**: When you develop SLAM algorithms here, you're developing against the same software that runs on production PX4 drones. See [CONCEPTS.md](CONCEPTS.md#simulation-to-hardware-architecture) for the complete simulation-to-hardware architecture explanation.
 
 ## Quick Start
 

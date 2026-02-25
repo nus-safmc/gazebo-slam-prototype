@@ -33,6 +33,132 @@ If you want the PX4 SITL track (real autopilot in `PX4-Autopilot/`) instead of t
 
 ---
 
+## Simulation to Hardware Architecture
+
+This section explains how the PX4 SITL simulation architecture translates to real-world drone deployment, ensuring contributors understand the development workflow.
+
+### Core Principle: Same Software Stack, Different Transport
+
+The architecture is designed so your ROS 2 SLAM stack runs identically in simulation and on real hardware. The only difference is the **transport layer** between ROS 2 and PX4.
+
+```
+SIMULATION (Your Development Environment)     REAL DRONE (Production Deployment)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PX4 SITL Process (Software)                   PX4 Flight Controller (Hardware)
+├── Runs on your computer                     ├── Runs on drone's FC board (e.g., Pixhawk)
+├── Gazebo physics simulation                 ├── Real sensors & motors
+├── UDP localhost:8888 communication          ├── Serial/USB/WiFi telemetry link
+├── Perfect environmental conditions          ├── Real-world physics & disturbances
+└── Deterministic behavior                    └── Stochastic real-world behavior
+
+MicroXRCEAgent (Communication Bridge - Same in Both!)
+├── Simulation: udp4 -p 8888                  ├── Hardware: serial -d /dev/ttyACM0 -b 921600
+├── DDS-XRCE protocol (unchanged)             ├── DDS-XRCE protocol (unchanged)
+├── ROS 2 ↔ PX4 message translation           ├── ROS 2 ↔ PX4 message translation
+└── Same px4_msgs message definitions         └── Same px4_msgs message definitions
+
+Your ROS 2 SLAM Stack (100% Unchanged!)
+├── tof8x8_to_scan.py (sensor processing)     ├── tof8x8_to_scan.py (sensor processing)
+├── scan_merger.py (360° scan fusion)         ├── scan_merger.py (360° scan fusion)
+├── slam_toolbox (mapping)                    ├── slam_toolbox (mapping)
+├── nav2_explore (autonomous navigation)      ├── nav2_explore (autonomous navigation)
+└── Same topics, same algorithms              └── Same topics, same algorithms
+```
+
+### Transport Layer Details
+
+#### Simulation Transport (UDP)
+```bash
+# In launch files (px4_sitl.launch.py, px4_swarm_fast.launch.py)
+MicroXRCEAgent udp4 -p 8888 -v 2
+```
+- **Protocol**: UDP over localhost
+- **Port**: 8888 (PX4 default)
+- **Reliability**: Perfect (no packet loss on localhost)
+- **Latency**: Minimal (~0.1ms)
+
+#### Hardware Transport Options
+```bash
+# USB Serial (most common for development)
+MicroXRCEAgent serial -d /dev/ttyACM0 -b 921600
+
+# UART Serial (direct flight controller connection)
+MicroXRCEAgent serial -d /dev/ttyS3 -b 57600
+
+# WiFi/Telemetry (wireless deployment)
+MicroXRCEAgent udp4 -p 8888  # (different IP/port for remote drone)
+```
+
+### Development Workflow
+
+1. **Develop & Test in SITL**
+   - Perfect environment for algorithm development
+   - Fast iteration cycles
+   - Deterministic behavior for debugging
+   - `pixi run -e jazzy px4_sitl_slam` → `pixi run -e jazzy px4_nav2_explore`
+
+2. **Hardware-in-Loop (HITL) Testing** (Optional)
+   - Real PX4 flight controller + simulated sensors
+   - Validates flight control integration
+   - Tests real-time performance constraints
+
+3. **Real Hardware Deployment**
+   - Change MicroXRCEAgent transport from UDP to serial
+   - Deploy same ROS 2 nodes to companion computer
+   - Add hardware-specific configurations (calibration, failsafes)
+
+### Key Architectural Benefits
+
+#### **Abstraction Through PX4 Messages**
+Your code never talks directly to hardware - it uses standardized `px4_msgs`:
+- `VehicleOdometry` - Position/velocity estimates
+- `VehicleStatus` - Flight mode, arming state
+- `TrajectorySetpoint` - Navigation commands
+- `OffboardControlMode` - Control authority requests
+
+#### **ROS 2 Middleware Isolation**
+- CycloneDDS handles all message routing
+- Transport failures are abstracted away
+- Quality-of-Service settings ensure reliability
+- Same API regardless of transport (UDP/serial/WiFi)
+
+#### **Zero Code Changes for Deployment**
+When moving from simulation to hardware:
+- ✅ Rebuild PX4 firmware (if needed)
+- ✅ Change MicroXRCEAgent command-line arguments
+- ❌ No changes to your SLAM algorithms
+- ❌ No changes to ROS 2 node logic
+- ❌ No changes to topic names or message types
+
+### PX4 Integration Points
+
+The system integrates with PX4 at these key points:
+
+1. **Visual Odometry** (`pose_to_px4_visual_odometry`)
+   - Gazebo pose → PX4 `/fmu/in/vehicle_visual_odometry`
+   - Helps PX4 EKF2 fuse vision + IMU data
+
+2. **Offboard Control** (`twist_to_px4_offboard`)
+   - ROS navigation commands → PX4 trajectory setpoints
+   - Enables autonomous flight control
+
+3. **Vehicle State** (`px4_vehicle_odometry_to_odom`)
+   - PX4 estimates → ROS odometry for SLAM
+   - Provides ground truth for mapping validation
+
+### Contributing Guidelines
+
+When contributing to this codebase:
+
+1. **Test in SITL First**: All features must work in simulation
+2. **Transport Agnostic**: Never hardcode transport-specific logic
+3. **Message-Based Design**: Use px4_msgs, not direct hardware access
+4. **Deployment Ready**: Code should run unchanged on real hardware
+
+This architecture ensures your contributions have a clear path from simulation to real-world deployment, maximizing the impact of development efforts.
+
+---
+
 ## 🚨 DEPRECATED: Lightweight rex_quadcopter Track
 
 **⚠️ The lightweight `rex_quadcopter` model is DEPRECATED and will be removed in a future version. All development is now focused on the PX4 SITL track for realistic autopilot integration.**
