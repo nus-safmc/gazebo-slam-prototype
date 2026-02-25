@@ -5,7 +5,7 @@
 #   base: robot/base_footprint (alias: robot/base_link)
 #
 # Topics:
-#   scan:     /scan_merged
+#   scan:     /scan_merged_viz
 #   odometry: /odom
 
 bt_navigator:
@@ -34,7 +34,7 @@ controller_server:
     min_theta_velocity_threshold: 0.001
     # How long the controller may fail to produce a command before aborting.
     # Too low causes rapid abort / recovery thrashing in cluttered starts.
-    failure_tolerance: 1.0
+    failure_tolerance: 3.0
     progress_checker_plugins: ["progress_checker"]
     goal_checker_plugins: ["general_goal_checker"]
     controller_plugins: ["FollowPath"]
@@ -42,13 +42,13 @@ controller_server:
 
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.2
-      movement_time_allowance: 10.0
+      required_movement_radius: 0.10
+      movement_time_allowance: 20.0
     general_goal_checker:
       stateful: True
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.35
-      yaw_goal_tolerance: 0.6
+      yaw_goal_tolerance: 0.5
 
     FollowPath:
       # DWB is more robust than MPPI in this low-resolution ToF setup and avoids
@@ -57,21 +57,21 @@ controller_server:
       debug_trajectory_details: false
 
       # Velocity limits (holonomic)
-      min_vel_x: -0.3
-      max_vel_x: 0.5
-      min_vel_y: -0.3
-      max_vel_y: 0.5
-      max_vel_theta: 0.9
+      min_vel_x: -0.12
+      max_vel_x: 0.25
+      min_vel_y: -0.12
+      max_vel_y: 0.18
+      max_vel_theta: 0.8
       min_speed_xy: 0.0
-      max_speed_xy: 0.5
+      max_speed_xy: 0.25
       min_speed_theta: 0.0
 
       # Accel limits
-      acc_lim_x: 0.8
-      acc_lim_y: 0.8
+      acc_lim_x: 0.6
+      acc_lim_y: 0.6
       acc_lim_theta: 1.2
-      decel_lim_x: -0.8
-      decel_lim_y: -0.8
+      decel_lim_x: -0.6
+      decel_lim_y: -0.6
       decel_lim_theta: -1.2
 
       vx_samples: 15
@@ -82,14 +82,14 @@ controller_server:
       angular_granularity: 0.025
       transform_tolerance: 0.2
       xy_goal_tolerance: 0.35
-      trans_stopped_velocity: 0.05
+      trans_stopped_velocity: 0.02
       short_circuit_trajectory_evaluation: true
 
       critics: [
         "RotateToGoal", "Oscillation", "BaseObstacle",
         "GoalAlign", "PathAlign", "PathDist", "GoalDist"
       ]
-      BaseObstacle.scale: 1.0 #0.03 previously
+      BaseObstacle.scale: 0.08
       PathAlign.scale: 24.0
       PathAlign.forward_point_distance: 0.325
       GoalAlign.scale: 20.0
@@ -113,7 +113,7 @@ local_costmap:
       width: 7
       height: 7
       resolution: 0.10
-      robot_radius: 0.20
+      robot_radius: 0.30
       # Include the fused global /map as a static layer so the controller also
       # respects the perimeter keepout band (otherwise it can drive into the
       # keepout and Nav2 will get stuck with "Start occupied").
@@ -127,21 +127,32 @@ local_costmap:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
         footprint_clearing_enabled: True
-        observation_sources: scan
-        scan:
-          topic: scan_merged
+        # Split marking vs clearing:
+        # - Marking uses the raw scan with `inf` for no-return beams so we don't create
+        #   phantom obstacles at the far clip distance.
+        # - Clearing uses the RViz-friendly scan that substitutes `inf` with range_max,
+        #   but with marking disabled so it only clears free space.
+        observation_sources: scan_marking scan_clearing
+        scan_marking:
+          topic: /scan_merged
           max_obstacle_height: 2.0
-          clearing: True
+          clearing: False
           marking: True
           data_type: "LaserScan"
-          raytrace_max_range: 6.0
+          obstacle_max_range: 4.0
+          obstacle_min_range: 0.35
+        scan_clearing:
+          topic: /scan_merged_viz
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: False
+          data_type: "LaserScan"
+          raytrace_max_range: 4.1
           raytrace_min_range: 0.0
-          obstacle_max_range: 5.5
-          obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 2.5
-        inflation_radius: 0.4
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.95
       always_send_full_costmap: True
 
 global_costmap:
@@ -152,36 +163,23 @@ global_costmap:
       publish_frequency: 0.5
       global_frame: robot/map
       robot_base_frame: robot/base_footprint
-      robot_radius: 0.20
+      robot_radius: 0.30
       resolution: 0.10
+      # Keep unknown cells as unknown so RViz/Nav2 doesn't treat the entire (unseen)
+      # arena as free space at startup.
       track_unknown_space: true
-      # Combine the fused global /map with each robot's live scan so planners
-      # don't route through newly-seen obstacles (which causes MPPI failures).
-      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]
+      # Use the SLAM /map as the global source of obstacles; keep live scan
+      # processing in the local costmap for more stable planning.
+      plugins: ["static_layer", "inflation_layer"]
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_topic: /map
         subscribe_to_updates: true
         map_subscribe_transient_local: True
-      obstacle_layer:
-        plugin: "nav2_costmap_2d::ObstacleLayer"
-        enabled: True
-        footprint_clearing_enabled: True
-        observation_sources: scan
-        scan:
-          topic: scan_merged
-          max_obstacle_height: 2.0
-          clearing: True
-          marking: True
-          data_type: "LaserScan"
-          raytrace_max_range: 6.0
-          raytrace_min_range: 0.0
-          obstacle_max_range: 5.5
-          obstacle_min_range: 0.0
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 1.05
+        inflation_radius: 1.10
       always_send_full_costmap: True
 
 planner_server:
@@ -194,9 +192,9 @@ planner_server:
       plugin: "nav2_smac_planner::SmacPlanner2D"
       tolerance: 0.35
       allow_unknown: true
-      # The arena is now 40×40m; downsample + higher iteration cap keeps planning reliable.
-      downsample_costmap: true
-      downsampling_factor: 2
+      # Keep planning reliable in large open areas.
+      downsample_costmap: false
+      downsampling_factor: 1
       max_iterations: 200000
       max_on_approach_iterations: 4000
 
@@ -256,10 +254,10 @@ velocity_smoother:
     smoothing_frequency: 20.0
     scale_velocities: False
     feedback: "OPEN_LOOP"
-    max_velocity: [0.3, 0.25, 0.9]
-    min_velocity: [-0.15, -0.25, -0.9]
-    max_accel: [0.8, 0.8, 1.2]
-    max_decel: [-0.8, -0.8, -1.2]
+    max_velocity: [0.25, 0.18, 0.8]
+    min_velocity: [-0.12, -0.18, -0.8]
+    max_accel: [0.6, 0.6, 1.2]
+    max_decel: [-0.6, -0.6, -1.2]
     odom_topic: odom
     odom_duration: 0.15
     deadband_velocity: [0.0, 0.0, 0.0]
@@ -277,19 +275,10 @@ collision_monitor:
     source_timeout: 1.0
     base_shift_correction: True
     stop_pub_timeout: 2.0
-    # Use a predictive approach polygon; a hard StopZone tended to freeze robots
-    # in cluttered starts and prevented multi-robot motion.
+    # In this ToF-only setup, a hard STOP zone can deadlock the robot when it gets
+    # close to obstacles (it prevents backing away). Use the directional APPROACH
+    # behavior instead and let costmap inflation keep clearance.
     polygons: ["FootprintApproach"]
-    # Hard safety zone for near-field obstacles (walls/props/other robots).
-    StopZone:
-      type: "polygon"
-      # Square around base_footprint in meters.
-      # Keep this tight; too-large stop zones cause robots to freeze near normal obstacles.
-      points: "[[0.28, 0.28], [0.28, -0.28], [-0.28, -0.28], [-0.28, 0.28]]"
-      action_type: "stop"
-      min_points: 4
-      visualize: False
-      enabled: False
     FootprintApproach:
       type: "polygon"
       action_type: "approach"
@@ -302,7 +291,7 @@ collision_monitor:
     observation_sources: ["scan"]
     scan:
       type: "scan"
-      topic: "scan_merged"
+      topic: "/scan_merged_viz"
       enabled: True
 
 docking_server:

@@ -1,9 +1,10 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
   <world name="playfield">
-    <physics name="1ms" type="ignored">
+    <physics name="1ms" type="ode">
       <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
     </physics>
 
     <plugin
@@ -13,6 +14,27 @@
     <plugin
       filename="gz-sim-user-commands-system"
       name="gz::sim::systems::UserCommands">
+    </plugin>
+    <!-- PX4 SITL sensors (IMU / barometer / GPS) require these system plugins, like PX4's default worlds. -->
+    <plugin
+      filename="gz-sim-contact-system"
+      name="gz::sim::systems::Contact">
+    </plugin>
+    <plugin
+      filename="gz-sim-imu-system"
+      name="gz::sim::systems::Imu">
+    </plugin>
+    <plugin
+      filename="gz-sim-air-pressure-system"
+      name="gz::sim::systems::AirPressure">
+    </plugin>
+    <plugin
+      filename="gz-sim-apply-link-wrench-system"
+      name="gz::sim::systems::ApplyLinkWrench">
+    </plugin>
+    <plugin
+      filename="gz-sim-navsat-system"
+      name="gz::sim::systems::NavSat">
     </plugin>
     <plugin
       filename="gz-sim-sensors-system"

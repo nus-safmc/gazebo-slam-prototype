@@ -1,10 +1,13 @@
 # Swarm Control Package
 
-Centralized control system for multi-robot exploration and mapping.
+Centralized control system for multi-robot exploration and mapping,
+running on PX4 SITL drones in Gazebo Harmonic.
 
 ## Overview
 
-This package implements a centralized swarm control architecture for coordinated frontier exploration with Nav2 navigation:
+This package implements a centralized swarm control architecture for
+coordinated frontier exploration.  The navigation layer is swappable
+between Nav2 and a reactive autopilot via the `nav_mode` launch argument.
 
 - **FrontierServer**: Centralized frontier detection from merged map
 - **GoalAllocator**: Optimal assignment of frontiers to available drones
@@ -12,6 +15,9 @@ This package implements a centralized swarm control architecture for coordinated
 - **MissionSupervisor**: Global mission orchestration with takeoff windows
 - **TrafficManager**: Proximity monitoring and collision avoidance
 - **SwarmDashboard**: Web-based live dashboard on `http://localhost:8080`
+
+See [docs/px4_integration.md](docs/px4_integration.md) for details on the
+PX4 control chain and coordinate frame conventions.
 
 ## Architecture
 
@@ -40,6 +46,12 @@ This package implements a centralized swarm control architecture for coordinated
 
 ## Quick Start
 
+### Prerequisites
+
+- PX4-Autopilot built with `gz_x500_small_tof` target
+- MicroXRCE-DDS Agent (`scripts/build_microxrce_agent.sh`)
+- `px4_msgs` ROS 2 package
+
 ### 1. Build the Package
 ```bash
 pixi run -e jazzy build
@@ -47,8 +59,11 @@ pixi run -e jazzy build
 
 ### 2. Launch Full Swarm Test
 ```bash
-# Starts Gazebo (5 robots) + Nav2 stacks + swarm control + web dashboard
-pixi run -e jazzy ros2 launch swarm_control test_swarm.launch.py
+# PX4 SITL (4 drones) + Nav2 + swarm control + web dashboard
+pixi run -e jazzy ros2 launch swarm_control test_swarm.launch.py num_robots:=4
+
+# Or with autopilot navigation instead of Nav2
+pixi run -e jazzy ros2 launch swarm_control test_swarm.launch.py num_robots:=4 nav_mode:=autopilot
 ```
 
 ### 3. Open the Dashboard

@@ -1,23 +1,21 @@
 #!/usr/bin/env python3
 """
-Test launch: full Gazebo swarm simulation + centralized swarm control.
+Test Swarm Launch (PX4)
+=======================
 
-Uses swarm_fast.launch.py for the infrastructure (Gazebo, bridges, TF, scan
-mergers, map fuser, Nav2 stacks) with the old distributed explorer disabled,
-then layers the centralized swarm_control nodes on top.
+Convenience wrapper around ``px4_test_swarm.launch.py`` with sensible
+defaults for quick local testing.  This is the recommended entry-point
+for running the full PX4 swarm + centralized swarm_control stack.
+
+For the legacy Gazebo-only (rex_quadcopter) setup, use the deprecated
+``swarm_fast.launch.py`` directly from ``tof_slam_sim``.
 """
-
-import os
 
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
     IncludeLaunchDescription,
-    RegisterEventHandler,
-    Shutdown,
-    TimerAction,
 )
-from launch.event_handlers import OnProcessExit
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
@@ -25,56 +23,40 @@ from launch_ros.substitutions import FindPackageShare
 
 def generate_launch_description():
     declare_num_robots = DeclareLaunchArgument(
-        'num_robots', default_value='8',
+        'num_robots', default_value='4',
     )
     declare_dashboard = DeclareLaunchArgument(
         'dashboard', default_value='true',
     )
     declare_rviz = DeclareLaunchArgument(
         'rviz', default_value='false',
-        description='Launch RViz to visualize the merged map.',
+        description='Launch RViz to visualise the merged map.',
+    )
+    declare_nav_mode = DeclareLaunchArgument(
+        'nav_mode', default_value='nav2',
+        description='Navigation backend: "nav2" or "autopilot".',
     )
 
-    sim_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource([
-            PathJoinSubstitution([
-                FindPackageShare('tof_slam_sim'),
-                'launch',
-                'swarm_fast.launch.py',
-            ])
-        ]),
-        launch_arguments={
-            'num_robots': LaunchConfiguration('num_robots'),
-            'world': 'playfield_competition.sdf',
-            'default_spawn': 'true',
-            'run_nav2': 'true',
-            'run_explorer': 'false',
-            'run_autopilot': 'false',
-            'rviz': LaunchConfiguration('rviz'),
-            'health_ui': 'false',
-            'publish_drone_markers': 'false',
-        }.items(),
-    )
-
-    swarm_launch = IncludeLaunchDescription(
+    px4_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource([
             PathJoinSubstitution([
                 FindPackageShare('swarm_control'),
                 'launch',
-                'swarm_control.launch.py',
+                'px4_test_swarm.launch.py',
             ])
         ]),
         launch_arguments={
+            'num_robots': LaunchConfiguration('num_robots'),
             'dashboard': LaunchConfiguration('dashboard'),
+            'rviz': LaunchConfiguration('rviz'),
+            'nav_mode': LaunchConfiguration('nav_mode'),
         }.items(),
     )
-
-    delayed_swarm = TimerAction(period=8.0, actions=[swarm_launch])
 
     return LaunchDescription([
         declare_num_robots,
         declare_dashboard,
         declare_rviz,
-        sim_launch,
-        delayed_swarm,
+        declare_nav_mode,
+        px4_launch,
     ])

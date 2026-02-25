@@ -55,6 +55,13 @@ set(_python_nodes
   "tof_slam_sim.topic_monitor:main:topic_monitor"
   "tof_slam_sim.drone_health_dashboard:main:drone_health_dashboard"
   "tof_slam_sim.swarm_mission_manager:main:swarm_mission_manager"
+  # PX4 integration nodes
+  "tof_slam_sim.twist_to_px4_offboard:main:twist_to_px4_offboard"
+  "tof_slam_sim.px4_vehicle_odometry_to_odom:main:px4_vehicle_odometry_to_odom"
+  "tof_slam_sim.pose_to_px4_visual_odometry:main:pose_to_px4_visual_odometry"
+  "tof_slam_sim.gz_pose_info_to_pose_stamped:main:gz_pose_info_to_pose_stamped"
+  "tof_slam_sim.pose_to_odom:main:pose_to_odom"
+  "tof_slam_sim.arena_map_padder:main:arena_map_padder"
   )
 
 foreach(entry IN LISTS _python_nodes)

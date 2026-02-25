@@ -7,6 +7,7 @@ from typing import Iterable
 import rclpy
 from geometry_msgs.msg import TransformStamped
 from nav_msgs.msg import Odometry
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from tf2_msgs.msg import TFMessage
@@ -54,6 +55,11 @@ class SwarmTFBroadcaster(Node):
         self.declare_parameter('robots', ['robot', 'robot2', 'robot3', 'robot4'])
         self.declare_parameter('map_frame', 'robot/map')
         self.declare_parameter('publish_base_link_alias', True)
+        self.declare_parameter(
+            'odom_offsets',
+            [''],
+            ParameterDescriptor(type=ParameterType.PARAMETER_STRING_ARRAY),
+        )
 
         self._robots = [str(r).strip() for r in self.get_parameter('robots').value if str(r).strip()]
         if not self._robots:
@@ -61,6 +67,7 @@ class SwarmTFBroadcaster(Node):
 
         self._map_frame = str(self.get_parameter('map_frame').value).strip() or 'robot/map'
         self._publish_alias = bool(self.get_parameter('publish_base_link_alias').value)
+        self._odom_offsets = self._parse_odom_offsets(list(self.get_parameter('odom_offsets').value))
 
         qos_tf = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
@@ -111,6 +118,46 @@ class SwarmTFBroadcaster(Node):
             f'ns_tf={sorted(self._ns_tf_pubs.keys())}'
         )
 
+    def _parse_odom_offsets(self, raw: list[object]) -> dict[str, tuple[float, float]]:
+        """Parse per-robot map->odom XY offsets from a string array.
+
+        Format (either):
+          - "robot,1.0,-2.0"
+          - "robot: 1.0 -2.0"
+        """
+        out: dict[str, tuple[float, float]] = {}
+        for entry in raw:
+            s = str(entry).strip()
+            if not s:
+                continue
+
+            name = ''
+            rest = ''
+            if ':' in s:
+                name, rest = s.split(':', 1)
+                name = name.strip()
+                rest = rest.strip().replace(',', ' ')
+            else:
+                parts = [p.strip() for p in s.split(',') if p.strip()]
+                if len(parts) >= 3:
+                    name = parts[0]
+                    rest = ' '.join(parts[1:3])
+                else:
+                    continue
+
+            coords = [p for p in rest.split() if p]
+            if len(coords) < 2:
+                continue
+            try:
+                x = float(coords[0])
+                y = float(coords[1])
+            except ValueError:
+                continue
+
+            if name:
+                out[name] = (x, y)
+        return out
+
     def _build_static_transforms(self) -> list[TransformStamped]:
         out: list[TransformStamped] = []
 
@@ -120,6 +167,10 @@ class SwarmTFBroadcaster(Node):
             t_map_odom.header.stamp.nanosec = 0
             t_map_odom.header.frame_id = self._map_frame
             t_map_odom.child_frame_id = f'{r}/odom'
+            off = self._odom_offsets.get(r)
+            if off is not None:
+                t_map_odom.transform.translation.x = float(off[0])
+                t_map_odom.transform.translation.y = float(off[1])
             t_map_odom.transform.rotation.w = 1.0
             out.append(t_map_odom)
 

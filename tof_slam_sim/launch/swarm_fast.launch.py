@@ -1,3 +1,9 @@
+"""
+.. deprecated::
+    This launch file uses the legacy rex_quadcopter Gazebo-only models.
+    For PX4 SITL simulation use ``px4_swarm_fast.launch.py`` instead,
+    or launch via ``swarm_control``'s ``test_swarm.launch.py``.
+"""
 from __future__ import annotations
 
 import math

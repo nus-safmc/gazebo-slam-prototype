@@ -1,5 +1,19 @@
 # Key Concepts
 
+## PX4 Drone Platform
+
+Each drone in the swarm runs a real PX4 firmware instance via SITL
+(Software-In-The-Loop).  The physical model is the `x500_small_tof`
+airframe with a `TOF-Ring` sensor attachment providing 8 depth cameras
+arranged in a 360-degree pattern.
+
+PX4 communicates with ROS 2 via the MicroXRCE-DDS Agent (UDP transport).
+Bridge nodes translate between PX4's NED coordinate frame and ROS's ENU
+convention, and between PX4 offboard commands and standard `cmd_vel`
+Twist messages.
+
+For the full PX4 control chain see [px4_integration.md](px4_integration.md).
+
 ## Map Merging (How Multiple Robot Maps Become One)
 
 ### The Problem

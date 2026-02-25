@@ -1,12 +1,12 @@
 <?xml version="1.0" ?>
 <sdf version="1.9">
-  <!-- Keep world name as "playfield" to match existing bridge topic names. -->
+  <!-- PX4-friendly sparse arena: no embedded rex_quadcopter models. -->
+  <!-- Keep world name as "playfield" so /world/playfield/clock matches launch defaults. -->
   <world name="playfield">
-    <!-- Use a larger timestep to keep the sim realtime with 4 robots + 32 lidars. -->
-    <physics name="4ms" type="ode">
-      <max_step_size>0.004</max_step_size>
+    <physics name="1ms" type="ode">
+      <max_step_size>0.001</max_step_size>
       <real_time_factor>1.0</real_time_factor>
-      <real_time_update_rate>250</real_time_update_rate>
+      <real_time_update_rate>1000</real_time_update_rate>
     </physics>
 
     <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics" />
@@ -864,29 +864,5 @@
       </link>
     </model>
 
-    <!-- Robots: spread across the arena for breadth-first swarm mapping -->
-    <include>
-      <uri>model://rex_quadcopter</uri>
-      <name>robot</name>
-      <pose>0 -7 0.05 0 0 0</pose>
-    </include>
-
-    <include>
-      <uri>model://rex_quadcopter_2</uri>
-      <name>robot2</name>
-      <pose>-6.5 5.4 0.05 0 0 1.5708</pose>
-    </include>
-
-    <include>
-      <uri>model://rex_quadcopter_3</uri>
-      <name>robot3</name>
-      <pose>7 7 0.05 0 0 3.1416</pose>
-    </include>
-
-    <include>
-      <uri>model://rex_quadcopter_4</uri>
-      <name>robot4</name>
-      <pose>7 -7 0.05 0 0 -1.5708</pose>
-    </include>
   </world>
 </sdf>
